@@ -134,6 +134,7 @@ async def _async_battery_replaced(call: ServiceCall) -> ServiceResponse:
                         call.data.get("battery_level"),
                         estimated=call.data.get("estimated", False),
                         uncertainty_hours=call.data.get("uncertainty_hours", 0),
+                        trend_samples=call.data.get("trend_samples"),
                     )
                     await coordinator.async_request_refresh()
 
@@ -189,6 +190,7 @@ async def _async_battery_replaced(call: ServiceCall) -> ServiceResponse:
             call.data.get("battery_level"),
             estimated=call.data.get("estimated", False),
             uncertainty_hours=call.data.get("uncertainty_hours", 0),
+            trend_samples=call.data.get("trend_samples"),
         )
         await coordinator.async_request_refresh()
 

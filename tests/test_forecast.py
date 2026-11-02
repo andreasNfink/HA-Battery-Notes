@@ -9,7 +9,7 @@ from custom_components.battery_notes.const import (
     DOMAIN,
     SERVICE_BATTERY_REPLACED_SCHEMA,
 )
-from custom_components.battery_notes.forecast import estimate_days
+from custom_components.battery_notes.forecast import add_sample, estimate_days
 from custom_components.battery_notes.store import STORAGE_KEY
 from freezegun.api import FrozenDateTimeFactory
 from pytest_homeassistant_custom_component.common import (
@@ -30,11 +30,15 @@ NOW = datetime.fromisoformat("2026-11-02T10:00:00+00:00")
 @pytest.mark.parametrize(
     ("initial", "level", "age", "stale", "suspended", "days", "status"),
     [
-        pytest.param(90, 70, 10, 0, False, 30, "estimated", id="average-loss"),
-        pytest.param(80, 70, 10, 0, False, 60, "estimated", id="actual-start-not-100"),
+        pytest.param(
+            90, 70, 10, 0, False, None, "insufficient_data", id="legacy-no-trend"
+        ),
+        pytest.param(
+            80, 70, 10, 0, False, None, "insufficient_data", id="no-invented-trend"
+        ),
         pytest.param(None, 70, 10, 0, False, None, "missing_baseline", id="legacy"),
         pytest.param(90, 89, 10, 0, False, None, "insufficient_data", id="small-drop"),
-        pytest.param(90, 70, 2, 0, False, None, "insufficient_data", id="too-short"),
+        pytest.param(90, 70, 2, 0, False, None, "settling", id="too-short"),
         pytest.param(90, 70, 10, 4, False, None, "stale_reading", id="stale"),
         pytest.param(90, 70, 10, -1, False, None, "stale_reading", id="future-report"),
         pytest.param(90, 95, 10, 0, True, None, "replacement_suspected", id="rise"),
@@ -100,14 +104,18 @@ async def test_forecast_lifecycle(
         for key in ("device_id", "source_entity_id")
         if key in subentry.data
     }
-    # Current fixture report is 55%; a recorded start of 75% ten days ago gives 23 d.
+    # Import a real post-settling slope of 2 percentage points/day; current is 55%.
     await hass.services.async_call(
         DOMAIN,
         "set_battery_replaced",
         {
             **target,
-            "datetime_replaced": NOW - timedelta(days=10),
-            "battery_level": 75,
+            "datetime_replaced": NOW - timedelta(days=20),
+            "battery_level": 95,
+            "trend_samples": [
+                {"time": NOW - timedelta(days=d), "level": 55 + 2 * d}
+                for d in range(17, -1, -1)
+            ],
             "estimated": True,
             "uncertainty_hours": 1,
         },
@@ -145,18 +153,17 @@ async def test_forecast_lifecycle(
     )
     await hass.async_block_till_done()
     assert coordinator.forecast_baseline["level"] == 66
-    assert (
-        hass.states.get(entity.entity_id).attributes["forecast_status"]
-        == "insufficient_data"
-    )
-    freezer.tick(timedelta(days=10))
-    hass.states.async_set(battery_note_sensor.entity_id, "56")
-    await hass.async_block_till_done()
-    assert hass.states.get(entity.entity_id).state == "46"
+    assert hass.states.get(entity.entity_id).attributes["forecast_status"] == "settling"
+    # The initial 16-point fall is excluded. Only the later 1 point/day counts.
+    for day in range(3, 14):
+        freezer.move_to(NOW + timedelta(days=day))
+        hass.states.async_set(battery_note_sensor.entity_id, str(53 - day))
+        await hass.async_block_till_done()
+    assert hass.states.get(entity.entity_id).state == "30"
     # MQTT startup can have no retained state; persisted evidence keeps its age.
     hass.states.async_set(battery_note_sensor.entity_id, "unknown")
     await hass.async_block_till_done()
-    assert hass.states.get(entity.entity_id).state == "46"
+    assert hass.states.get(entity.entity_id).state == "30"
     assert (
         hass.states.get(entity.entity_id).attributes["reading_source"]
         == "stored_report"
@@ -166,7 +173,7 @@ async def test_forecast_lifecycle(
     await hass.async_block_till_done()
     assert hass.states.get(entity.entity_id).state == "unknown"
     # Six-hour freshness timer expires a silent source without polling its device.
-    hass.states.async_set(battery_note_sensor.entity_id, "56")
+    hass.states.async_set(battery_note_sensor.entity_id, "40")
     await hass.async_block_till_done()
     freezer.tick(timedelta(days=4))
     async_fire_time_changed(hass, dt_util.utcnow())
@@ -190,3 +197,154 @@ async def test_historical_date_without_level(
     )
     coordinator.record_replacement(NOW - timedelta(days=20))
     assert coordinator.forecast_baseline["level"] is None
+
+
+@pytest.mark.parametrize("initial", [95, 100])
+def test_settling_drop_does_not_set_slope(initial: float) -> None:
+    """A large early decline never dominates the subsequent stable discharge."""
+    start = NOW - timedelta(days=20)
+    samples = []
+    for hour in range(20 * 24 + 1):
+        level = initial - 20 * hour / 72 if hour < 72 else 75 - (hour / 24 - 3)
+        samples = add_sample(samples, start + timedelta(hours=hour), level, start)
+    result = estimate_days(initial, start, 58, NOW, NOW, samples=samples)
+    assert result.days == 48
+    assert result.daily_loss == 1
+    assert len(samples) <= 60
+    assert all(
+        datetime.fromisoformat(s["time"]) >= start + timedelta(hours=72)
+        for s in samples
+    )
+
+
+def test_72_hour_boundary_and_no_old_average_fallback() -> None:
+    """Wait exactly 72 hours, then require evidence, rather than reuse start loss."""
+    start = NOW - timedelta(hours=72)
+    assert (
+        estimate_days(100, start, 70, NOW - timedelta(seconds=1), NOW).status
+        == "settling"
+    )
+    assert estimate_days(100, start, 70, NOW, NOW).status == "insufficient_data"
+    assert estimate_days(100, start, 9, NOW, NOW).days == 0
+
+
+@pytest.mark.parametrize("anomaly", [0, -15, 10])
+def test_daily_smoothing_rejects_single_anomalous_day(anomaly: float) -> None:
+    """A single spurious day does not change an otherwise constant slope."""
+    start = NOW - timedelta(days=30)
+    samples = [
+        {
+            "time": (NOW - timedelta(days=d)).isoformat(),
+            "level": 60 + d + (anomaly if d == 8 else 0),
+        }
+        for d in range(14, -1, -1)
+    ]
+    result = estimate_days(100, start, 60, NOW, NOW, samples=samples)
+    assert result.days == 50
+    assert result.daily_loss == 1
+
+
+@pytest.mark.parametrize("rate", [0, -0.2, 0.1])
+def test_flat_recovering_or_unresolved_trend_is_unknown(rate: float) -> None:
+    """Never turn an almost flat plateau into an enormous lifetime estimate."""
+    samples = [
+        {"time": (NOW - timedelta(days=d)).isoformat(), "level": 60 + rate * d}
+        for d in range(14, -1, -1)
+    ]
+    result = estimate_days(100, NOW - timedelta(days=30), 60, NOW, NOW, samples=samples)
+    assert result.days is None
+    assert result.status == "trend_unclear"
+
+
+def test_gap_and_prior_cycle_do_not_supply_evidence() -> None:
+    """Missing days and a previous battery cannot manufacture trend coverage."""
+    samples = [
+        {"time": (NOW - timedelta(days=d)).isoformat(), "level": 60 + d}
+        for d in [14, 13, 12, 11, 10, 4, 3, 2, 1, 0]
+    ]
+    assert (
+        estimate_days(
+            100, NOW - timedelta(days=30), 60, NOW, NOW, samples=samples
+        ).status
+        == "insufficient_data"
+    )
+    assert (
+        estimate_days(
+            100, NOW - timedelta(days=5), 60, NOW, NOW, samples=samples
+        ).status
+        == "insufficient_data"
+    )
+
+
+def test_sampling_is_bounded_and_does_not_weight_chattery_sources() -> None:
+    """One real value per six-hour slot, independent of report frequency."""
+    start = NOW - timedelta(days=100)
+    samples = []
+    for hour in range(100 * 24):
+        timestamp = start + timedelta(hours=hour)
+        samples = add_sample(samples, timestamp, 70, start)
+        unchanged = add_sample(samples, timestamp + timedelta(minutes=1), 69, start)
+        assert unchanged == samples
+    assert len(samples) <= 60
+    assert (
+        NOW - datetime.fromisoformat(samples[0]["time"])
+    ).total_seconds() <= 15 * 86400
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        [{"time": NOW, "level": float("nan")}],
+        [{"time": "invalid", "level": 50}],
+        [{"time": NOW, "level": 50}] * 61,
+    ],
+)
+def test_reject_invalid_or_oversized_history(payload: list[dict[str, Any]]) -> None:
+    """Bound history imports and validate before changing existing evidence."""
+    with pytest.raises(vol.Invalid):
+        SERVICE_BATTERY_REPLACED_SCHEMA({"device_id": "test", "trend_samples": payload})
+
+
+async def test_import_ignores_other_cycles_and_future_without_polling(
+    hass: HomeAssistant,
+    battery_note_config_entry: MockConfigEntry,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """Import valid historical samples through the same bounded collection path."""
+    freezer.move_to(NOW)
+    await setup_integration(hass, battery_note_config_entry)
+    coordinator = next(
+        iter(battery_note_config_entry.runtime_data.subentry_coordinators.values())
+    )
+    started = NOW - timedelta(days=10)
+    coordinator.record_replacement(
+        started,
+        95,
+        trend_samples=[
+            {"time": NOW - timedelta(days=11), "level": 10},
+            {"time": started + timedelta(hours=71), "level": 90},
+            {"time": started + timedelta(hours=72), "level": 80},
+            {"time": started + timedelta(hours=73), "level": 79},
+            {"time": NOW + timedelta(days=1), "level": 100},
+        ],
+    )
+    baseline = coordinator.forecast_baseline
+    assert baseline["suspended"] is False
+    assert baseline["samples"][0] == {
+        "time": (started + timedelta(hours=72)).isoformat(),
+        "level": 80,
+    }
+    assert (
+        len(baseline["samples"]) == 2
+    )  # one imported slot and the real current report
+    assert coordinator.last_replaced == started
+    # A second replacement inside imported history cannot silently mix cycles.
+    coordinator.record_replacement(
+        started,
+        95,
+        trend_samples=[
+            {"time": started + timedelta(days=4), "level": 60},
+            {"time": started + timedelta(days=5), "level": 80},
+        ],
+    )
+    assert coordinator.forecast_baseline["suspended"] is True

@@ -73,7 +73,7 @@ from .const import (
     LAST_REPORTED_LEVEL,
 )
 from .filters import LowOutlierFilter
-from .forecast import valid_level
+from .forecast import add_sample, valid_level
 from .store import REPORTED_SAVE_DELAY, SAVE_DELAY, BatteryNotesStorage
 
 _LOGGER = logging.getLogger(__name__)
@@ -655,7 +655,22 @@ class BatteryNotesSubentryCoordinator(DataUpdateCoordinator[None]):
             ):
                 # A rise is evidence for review, not proof of a battery replacement.
                 self._save_forecast_baseline({**baseline, "suspended": True})
-            self.last_reported = dt_util.utcnow()
+            now = dt_util.utcnow()
+            baseline = self.forecast_baseline
+            if (
+                valid_level(value)
+                and valid_level(baseline.get("level"))
+                and not baseline.get("suspended")
+                and (started := self.last_replaced)
+            ):
+                samples = add_sample(
+                    baseline.get("samples", []), now, float(value), started
+                )
+                if samples != baseline.get("samples", []):
+                    self._save_forecast_baseline(
+                        {**baseline, "samples": samples}, save_delay=REPORTED_SAVE_DELAY
+                    )
+            self.last_reported = now
             self.last_reported_level = float(value)
             self._previous_battery_low = self.battery_low
             self._previous_battery_level = self._current_battery_level
@@ -750,13 +765,17 @@ class BatteryNotesSubentryCoordinator(DataUpdateCoordinator[None]):
         )
         return (entry or {}).get("battery_forecast") or {}
 
-    def _save_forecast_baseline(self, baseline: dict[str, Any]) -> None:
+    def _save_forecast_baseline(
+        self, baseline: dict[str, Any], *, save_delay: float = SAVE_DELAY
+    ) -> None:
         """Batch forecast writes with the existing store."""
         data = {"battery_forecast": baseline}
         if self.source_entity_id:
-            self.async_update_entity_config(self.source_entity_id, data)
+            self.async_update_entity_config(
+                self.source_entity_id, data, save_delay=save_delay
+            )
         elif self.device_id:
-            self.async_update_device_config(self.device_id, data)
+            self.async_update_device_config(self.device_id, data, save_delay=save_delay)
 
     def record_replacement(
         self,
@@ -765,6 +784,7 @@ class BatteryNotesSubentryCoordinator(DataUpdateCoordinator[None]):
         *,
         estimated: bool = False,
         uncertainty_hours: float = 0,
+        trend_samples: list[dict[str, Any]] | None = None,
     ) -> None:
         """Record replacement evidence without treating today's level as historical."""
         replaced = _ensure_utc(replaced)
@@ -773,13 +793,44 @@ class BatteryNotesSubentryCoordinator(DataUpdateCoordinator[None]):
             current = self.current_battery_level
             if valid_level(current):
                 level = float(current)
+        samples: list[dict[str, Any]] = []
+        suspended = False
+        previous = level
+        for sample in sorted(
+            trend_samples or [], key=lambda item: _ensure_utc(item["time"])
+        ):
+            timestamp = _ensure_utc(sample["time"])
+            value = float(sample["level"])
+            if replaced <= timestamp <= now and valid_level(value):
+                if (
+                    previous is not None
+                    and valid_level(previous)
+                    and value - float(previous) > 10
+                ):
+                    suspended = True
+                previous = value
+                samples = add_sample(samples, timestamp, value, replaced)
+        # Trim imports to the current window and include a real current report.
+        if (
+            valid_level(current := self.current_battery_level)
+            and (reported := self.last_reported)
+            and reported <= now
+        ):
+            if (
+                previous is not None
+                and valid_level(previous)
+                and float(current) - float(previous) > 10
+            ):
+                suspended = True
+            samples = add_sample(samples, reported, float(current), replaced)
         self.last_replaced = replaced
         self._save_forecast_baseline(
             {
                 "level": level,
                 "source": "history_estimate" if estimated else "manual",
                 "uncertainty_hours": uncertainty_hours,
-                "suspended": False,
+                "suspended": suspended,
+                "samples": samples,
             }
         )
         self.async_set_updated_data(None)

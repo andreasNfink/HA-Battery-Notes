@@ -411,6 +411,7 @@ class BatteryNotesForecastSensor(BatteryNotesEntity, SensorEntity):
             coordinator.last_reported,
             dt_util.utcnow(),
             suspended=baseline.get("suspended", False),
+            samples=baseline.get("samples", []),
         )
         snapshot = (self._forecast, tuple(self.extra_state_attributes.items()))
         if snapshot != self._last_snapshot:
@@ -433,7 +434,12 @@ class BatteryNotesForecastSensor(BatteryNotesEntity, SensorEntity):
             "battery_last_replaced": self.coordinator.last_replaced,
             "replacement_source": baseline.get("source"),
             "uncertainty_hours": baseline.get("uncertainty_hours", 0),
-            "method": "average_loss_since_replacement",
+            "method": "daily_median_theil_sen",
+            "settling_hours": 72,
+            "trend_window_days": 14,
+            "trend_days": self._forecast.trend_days,
+            "sample_days": self._forecast.sample_days,
+            "daily_loss_percent": self._forecast.daily_loss,
             "reading_source": self._reading_source,
         }
 

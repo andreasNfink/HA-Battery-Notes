@@ -30,6 +30,12 @@ set_battery_replaced:
           max: 100
           mode: box
           unit_of_measurement: "%"
+    trend_samples:
+      name: Historical trend samples
+      description: Optional list of up to 60 measured time/level pairs from this battery cycle. The first 72 hours are excluded from the trend.
+      required: false
+      selector:
+        object:
     estimated:
       name: Estimated replacement
       description: Mark a date inferred from historical readings.

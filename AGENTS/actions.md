@@ -28,7 +28,7 @@ The public actions are `set_battery_replaced`, `check_battery_last_replaced`,
 
 For shared event semantics, read [Battery state and events](battery-state.md). For action descriptions, read [Translations and documentation](translations-and-docs.md).
 
-The fork extends `set_battery_replaced` with optional `battery_level`, `estimated`
-and `uncertainty_hours`. Keep these fields out of existing event payloads to
+The fork extends `set_battery_replaced` with optional `battery_level`, `estimated`,
+`uncertainty_hours`, and bounded `trend_samples`. Keep these fields out of existing event payloads to
 preserve consumers. Historical imports without a measured start level must not
 use the current level as if it were historical.

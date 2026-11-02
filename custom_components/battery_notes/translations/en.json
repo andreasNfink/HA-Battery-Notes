@@ -315,6 +315,10 @@
                 "uncertainty_hours": {
                     "name": "Time uncertainty (hours)",
                     "description": "Resolution or uncertainty of the historical timestamp."
+                },
+                "trend_samples": {
+                    "name": "Historical trend samples",
+                    "description": "Optional list of up to 60 measured time/level pairs from this battery cycle. The first 72 hours are excluded from the trend."
                 }
             },
             "name": "Set battery replaced"

@@ -315,6 +315,10 @@
                 "uncertainty_hours": {
                     "name": "Zeitliche Unsicherheit (Stunden)",
                     "description": "Auflösung oder Unsicherheit des historischen Zeitpunkts."
+                },
+                "trend_samples": {
+                    "name": "Historische Trendmesswerte",
+                    "description": "Optionale Liste mit bis zu 60 gemessenen time/level-Paaren dieses Batteriezyklus. Die ersten 72 Stunden werden aus dem Trend ausgeschlossen."
                 }
             },
             "name": "Batteriewechsel festlegen"

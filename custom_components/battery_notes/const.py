@@ -115,6 +115,21 @@ SERVICE_BATTERY_REPLACED_SCHEMA = vol.All(
             vol.Optional("battery_level"): vol.All(
                 vol.Coerce(float), finite_number, vol.Range(min=0, max=100)
             ),
+            vol.Optional("trend_samples"): vol.All(
+                vol.Length(max=60),
+                [
+                    vol.Schema(
+                        {
+                            vol.Required("time"): cv.datetime,
+                            vol.Required("level"): vol.All(
+                                vol.Coerce(float),
+                                finite_number,
+                                vol.Range(min=0, max=100),
+                            ),
+                        }
+                    )
+                ],
+            ),
             vol.Optional("estimated", default=False): cv.boolean,
             vol.Optional("uncertainty_hours", default=0): vol.All(
                 vol.Coerce(float), finite_number, vol.Range(min=0, max=87600)
