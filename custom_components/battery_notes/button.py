@@ -115,7 +115,7 @@ class BatteryNotesButton(BatteryNotesEntity, ButtonEntity):
 
     async def async_press(self) -> None:
         """Press the button."""
-        self.coordinator.last_replaced = dt_util.utcnow()
+        self.coordinator.record_replacement(dt_util.utcnow())
 
         self.hass.bus.async_fire(EVENT_BATTERY_REPLACED, self.coordinator.event_data())
 

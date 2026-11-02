@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from homeassistant.components.sensor import (
@@ -20,6 +20,7 @@ from homeassistant.const import (
     PERCENTAGE,
     STATE_UNAVAILABLE,
     STATE_UNKNOWN,
+    UnitOfTime,
 )
 from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.exceptions import TemplateError
@@ -36,6 +37,7 @@ from homeassistant.helpers.event import (
     EventStateReportedData,
     async_track_state_change_event,
     async_track_state_report_event,
+    async_track_time_interval,
 )
 from homeassistant.helpers.typing import StateType
 from homeassistant.util import dt as dt_util
@@ -64,6 +66,7 @@ from .coordinator import (
     BatteryNotesSubentryCoordinator,
 )
 from .entity import BatteryNotesEntity, BatteryNotesEntityDescription
+from .forecast import BatteryForecast, estimate_days, valid_level
 from .template_helpers import TemplateTrackingMixin
 
 
@@ -176,6 +179,27 @@ async def async_setup_entry(
                     f"{subentry.unique_id}{battery_plus_sensor_entity_description.unique_id_suffix}",
                     domain_config.enable_replaced,
                     domain_config.round_battery,
+                )
+            )
+
+        if coordinator.wrapped_battery or coordinator.battery_percentage_template:
+            forecast_description = BatteryNotesSensorEntityDescription(
+                unique_id_suffix="_battery_days_to_10",
+                key="battery_days_to_10",
+                translation_key="battery_days_to_10",
+                entity_category=EntityCategory.DIAGNOSTIC,
+                device_class=SensorDeviceClass.DURATION,
+                native_unit_of_measurement=UnitOfTime.DAYS,
+                suggested_display_precision=0,
+                entity_registry_enabled_default=False,
+                entity_type="sensor",
+            )
+            entities.append(
+                BatteryNotesForecastSensor(
+                    hass,
+                    coordinator,
+                    forecast_description,
+                    f"{subentry.unique_id}{forecast_description.unique_id_suffix}",
                 )
             )
 
@@ -311,6 +335,99 @@ class BatteryNotesLastReplacedSensor(BatteryNotesEntity, SensorEntity):
     def native_value(self) -> datetime | None:
         """Return the native value of the sensor."""
         return self._native_value
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Expose evidence quality alongside an inferred replacement date."""
+        baseline = self.coordinator.forecast_baseline
+        if not baseline:
+            return None
+        return {
+            "replacement_source": baseline.get("source"),
+            "uncertainty_hours": baseline.get("uncertainty_hours", 0),
+            "initial_battery_level": baseline.get("level"),
+        }
+
+
+class BatteryNotesForecastSensor(BatteryNotesEntity, SensorEntity):
+    """Optional estimate, using existing reports and a six-hour freshness check."""
+
+    _attr_should_poll = False
+    entity_description: BatteryNotesSensorEntityDescription
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        coordinator: BatteryNotesSubentryCoordinator,
+        description: BatteryNotesSensorEntityDescription,
+        unique_id: str,
+    ) -> None:
+        """Initialize without any database queries or new source polling."""
+        super().__init__(hass, description, coordinator)
+        self._attr_unique_id = unique_id
+        self._forecast = BatteryForecast(None, "missing_baseline")
+        self._last_snapshot: tuple[Any, ...] | None = None
+
+    async def async_added_to_hass(self) -> None:
+        """Subscribe only while this optional sensor is enabled."""
+        await super().async_added_to_hass()
+        self.async_on_remove(
+            async_track_time_interval(self.hass, self._refresh, timedelta(hours=6))
+        )
+        if source := self.coordinator.wrapped_battery:
+            self.async_on_remove(
+                async_track_state_change_event(
+                    self.hass, source.entity_id, self._refresh
+                )
+            )
+        self._refresh()
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Write only changed forecasts or evidence, not every incoming report."""
+        self._refresh()
+
+    @callback
+    def _refresh(self, _event: Any = None) -> None:
+        """Recalculate in constant time from the note's small stored baseline."""
+        coordinator = self.coordinator
+        baseline = coordinator.forecast_baseline
+        current = coordinator.current_battery_level
+        if source := coordinator.wrapped_battery:
+            source_state = self.hass.states.get(source.entity_id)
+            if source_state is None or not valid_level(source_state.state):
+                current = None
+        self._forecast = estimate_days(
+            baseline.get("level"),
+            coordinator.last_replaced,
+            float(current) if valid_level(current) else None,
+            coordinator.last_reported,
+            dt_util.utcnow(),
+            suspended=baseline.get("suspended", False),
+        )
+        snapshot = (self._forecast, tuple(self.extra_state_attributes.items()))
+        if snapshot != self._last_snapshot:
+            self._last_snapshot = snapshot
+            self.async_write_ha_state()
+
+    @property
+    def native_value(self) -> int | None:
+        """Return days to ten percent; unknown when evidence is insufficient."""
+        return self._forecast.days
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return stable evidence metadata, avoiding per-report timestamps."""
+        baseline = self.coordinator.forecast_baseline
+        return {
+            "forecast_status": self._forecast.status,
+            "target_battery_level": 10,
+            "initial_battery_level": baseline.get("level"),
+            "battery_last_replaced": self.coordinator.last_replaced,
+            "replacement_source": baseline.get("source"),
+            "uncertainty_hours": baseline.get("uncertainty_hours", 0),
+            "method": "average_loss_since_replacement",
+        }
 
 
 class BatteryNotesBatteryPlusBaseSensor(BatteryNotesEntity, RestoreSensor):

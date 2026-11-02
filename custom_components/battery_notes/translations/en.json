@@ -282,6 +282,9 @@
             },
             "battery_last_replaced": {
                 "name": "{device_name}Battery last replaced"
+            },
+            "battery_days_to_10": {
+                "name": "{device_name}Battery days to 10%"
             }
         }
     },
@@ -300,6 +303,18 @@
                 "datetime_replaced": {
                     "description": "Date replaced.",
                     "name": "Date"
+                },
+                "battery_level": {
+                    "name": "Initial battery level",
+                    "description": "Measured percentage just after replacement; required when importing historical dates."
+                },
+                "estimated": {
+                    "name": "Estimated replacement",
+                    "description": "Mark a date inferred from historical readings."
+                },
+                "uncertainty_hours": {
+                    "name": "Time uncertainty (hours)",
+                    "description": "Resolution or uncertainty of the historical timestamp."
                 }
             },
             "name": "Set battery replaced"

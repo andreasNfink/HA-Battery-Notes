@@ -120,6 +120,7 @@ async def test_composite_entity_note_uses_current_device(
         assert entity_registry.async_get(entity_id).device_id == current_device_id
     assert store.async_get_entity(battery_note_sensor.entity_id) == {
         "entity_id": battery_note_sensor.entity_id,
+        "battery_forecast": None,
         **history,
     }
     assert coordinator.last_replaced == history[LAST_REPLACED]

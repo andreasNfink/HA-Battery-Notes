@@ -71,3 +71,10 @@ reloads libraries from disk so changed user-library options take effect.
 ## Related guidance
 
 For source and registry behavior, read [Entity identity and lifecycle](entities.md). For persisted-data changes, read [Storage, migrations, and repairs](storage-and-migrations.md).
+
+## Fork forecast
+
+`forecast.py` contains guarded constant-cost estimates. `sensor.py` exposes an
+optional, disabled-by-default `battery_days_to_10` sensor. The coordinator stores
+a small baseline through `record_replacement`; no runtime recorder queries.
+See `docs/forecast.md` for evidence and update semantics.

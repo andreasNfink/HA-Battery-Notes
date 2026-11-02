@@ -40,6 +40,7 @@ class DeviceEntry:
     battery_last_replaced = attr.ib(type=datetime, default=None)
     battery_last_reported = attr.ib(type=datetime, default=None)
     battery_last_reported_level = attr.ib(type=float, default=None)
+    battery_forecast = attr.ib(type=dict, default=None)
 
 
 @attr.s(slots=True, frozen=True)
@@ -51,6 +52,7 @@ class EntityEntry:
     battery_last_replaced = attr.ib(type=datetime, default=None)
     battery_last_reported = attr.ib(type=datetime, default=None)
     battery_last_reported_level = attr.ib(type=float, default=None)
+    battery_forecast = attr.ib(type=dict, default=None)
 
 
 def _known_fields(entry_class: type, data: dict[str, Any]) -> dict[str, Any]:

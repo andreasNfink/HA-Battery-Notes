@@ -73,6 +73,7 @@ from .const import (
     LAST_REPORTED_LEVEL,
 )
 from .filters import LowOutlierFilter
+from .forecast import valid_level
 from .store import REPORTED_SAVE_DELAY, SAVE_DELAY, BatteryNotesStorage
 
 _LOGGER = logging.getLogger(__name__)
@@ -642,6 +643,18 @@ class BatteryNotesSubentryCoordinator(DataUpdateCoordinator[None]):
                 _LOGGER.debug("battery_increased event fired")
 
         if is_valid_level:
+            previous = self.last_reported_level
+            baseline = self.forecast_baseline
+            if (
+                baseline
+                and not baseline.get("suspended")
+                and valid_level(value)
+                and previous is not None
+                and valid_level(previous)
+                and float(value) - float(previous) > 10
+            ):
+                # A rise is evidence for review, not proof of a battery replacement.
+                self._save_forecast_baseline({**baseline, "suspended": True})
             self.last_reported = dt_util.utcnow()
             self.last_reported_level = float(value)
             self._previous_battery_low = self.battery_low
@@ -717,13 +730,59 @@ class BatteryNotesSubentryCoordinator(DataUpdateCoordinator[None]):
     def last_replaced(self, value: datetime):
         """Set the last replaced datetime and store it."""
         entry = {
-            LAST_REPLACED: _ensure_utc(value) if isinstance(value, datetime) else value
+            LAST_REPLACED: _ensure_utc(value) if isinstance(value, datetime) else value,
+            "battery_forecast": None,
         }
 
         if self.source_entity_id:
             self.async_update_entity_config(entity_id=self.source_entity_id, data=entry)
         elif self.device_id:
             self.async_update_device_config(device_id=self.device_id, data=entry)
+
+    @property
+    def forecast_baseline(self) -> dict[str, Any]:
+        """Return the small persisted forecast record for this source."""
+        store = self.config_entry.runtime_data.store
+        entry = (
+            store.async_get_entity(self.source_entity_id)
+            if self.source_entity_id
+            else store.async_get_device(self.device_id)
+        )
+        return (entry or {}).get("battery_forecast") or {}
+
+    def _save_forecast_baseline(self, baseline: dict[str, Any]) -> None:
+        """Batch forecast writes with the existing store."""
+        data = {"battery_forecast": baseline}
+        if self.source_entity_id:
+            self.async_update_entity_config(self.source_entity_id, data)
+        elif self.device_id:
+            self.async_update_device_config(self.device_id, data)
+
+    def record_replacement(
+        self,
+        replaced: datetime,
+        level: float | None = None,
+        *,
+        estimated: bool = False,
+        uncertainty_hours: float = 0,
+    ) -> None:
+        """Record replacement evidence without treating today's level as historical."""
+        replaced = _ensure_utc(replaced)
+        now = dt_util.utcnow()
+        if level is None and abs((now - replaced).total_seconds()) <= 300:
+            current = self.current_battery_level
+            if valid_level(current):
+                level = float(current)
+        self.last_replaced = replaced
+        self._save_forecast_baseline(
+            {
+                "level": level,
+                "source": "history_estimate" if estimated else "manual",
+                "uncertainty_hours": uncertainty_hours,
+                "suspended": False,
+            }
+        )
+        self.async_set_updated_data(None)
 
     @property
     def last_reported(self) -> datetime | None:

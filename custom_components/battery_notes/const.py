@@ -1,6 +1,7 @@
 """Constants for battery_notes."""
 
 from logging import Logger, getLogger
+from math import isfinite
 from typing import Final
 
 import voluptuous as vol
@@ -97,12 +98,27 @@ WINDOW_SIZE_UNIT_TIME = 2
 
 ISSUE_DEPRECATED_YAML = "deprecated_yaml"
 
+
+def finite_number(value: float) -> float:
+    """Reject NaN and infinity in imported forecast evidence."""
+    if not isfinite(value):
+        raise vol.Invalid("Expected a finite number")
+    return value
+
+
 SERVICE_BATTERY_REPLACED_SCHEMA = vol.All(
     vol.Schema(
         {
             vol.Optional(ATTR_DEVICE_ID): cv.string,
             vol.Optional(ATTR_SOURCE_ENTITY_ID): cv.string,
             vol.Optional(SERVICE_DATA_DATE_TIME_REPLACED): cv.datetime,
+            vol.Optional("battery_level"): vol.All(
+                vol.Coerce(float), finite_number, vol.Range(min=0, max=100)
+            ),
+            vol.Optional("estimated", default=False): cv.boolean,
+            vol.Optional("uncertainty_hours", default=0): vol.All(
+                vol.Coerce(float), finite_number, vol.Range(min=0, max=87600)
+            ),
         }
     ),
     cv.has_at_least_one_key(ATTR_DEVICE_ID, ATTR_SOURCE_ENTITY_ID),

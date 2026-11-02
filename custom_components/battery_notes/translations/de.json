@@ -282,6 +282,9 @@
             },
             "battery_last_replaced": {
                 "name": "{device_name}Letzter Batteriewechsel"
+            },
+            "battery_days_to_10": {
+                "name": "{device_name}Batterie – Tage bis 10 %"
             }
         }
     },
@@ -300,6 +303,18 @@
                 "datetime_replaced": {
                     "description": "Ersetzungsdatum.",
                     "name": "Datum"
+                },
+                "battery_level": {
+                    "name": "Batteriestand nach Wechsel",
+                    "description": "Gemessener Prozentwert direkt nach dem Wechsel; für historische Datumsangaben erforderlich."
+                },
+                "estimated": {
+                    "name": "Geschätzter Wechsel",
+                    "description": "Kennzeichnet ein aus Messwerten geschätztes Wechseldatum."
+                },
+                "uncertainty_hours": {
+                    "name": "Zeitliche Unsicherheit (Stunden)",
+                    "description": "Auflösung oder Unsicherheit des historischen Zeitpunkts."
                 }
             },
             "name": "Batteriewechsel festlegen"

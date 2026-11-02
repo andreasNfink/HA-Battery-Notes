@@ -1,3 +1,8 @@
+> **Andreas fork**, based on upstream 3.7.2. Adds optional battery days-to-10%
+> estimates and historical replacement evidence without recorder polling.
+> See [forecast and HACS maintenance](docs/forecast.md). Install this fork or
+> upstream, never both for the same `battery_notes` domain.
+
 # Battery Notes for Home Assistant
 
 [![GitHub Release][releases-shield]][releases]

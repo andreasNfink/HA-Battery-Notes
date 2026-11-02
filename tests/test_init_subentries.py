@@ -340,7 +340,7 @@ async def test_setup_subentry(
     for entry in entries:
         assert entry.config_subentry_id == mock_subentry.subentry_id
         assert entry.device_id == expected_device_id
-        assert hass.states.get(entry.entity_id) is not None
+        assert (hass.states.get(entry.entity_id) is None) == entry.disabled
 
     assert {
         entry.entity_id: {

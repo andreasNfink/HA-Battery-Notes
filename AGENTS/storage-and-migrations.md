@@ -38,3 +38,8 @@ directory under `.storage/battery_notes/`.
 ## Related guidance
 
 For setup and reload behavior, read [Repository and runtime architecture](architecture.md). For registry identity, read [Entity identity and lifecycle](entities.md).
+
+The fork adds an optional `battery_forecast` dictionary to device/entity history.
+Missing dictionaries remain unknown; never seed an initial percentage from a
+legacy device-creation date. Replacement imports include the actual start level
+and evidence quality. A new >10-point rise suspends the estimate.

@@ -1,5 +1,5 @@
 {
-    "name": "Battery Notes",
+    "name": "Battery Notes (Andreas fork)",
     "filename": "battery_notes.zip",
     "hide_default_branch": true,
     "homeassistant": "2026.6.0",

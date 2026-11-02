@@ -20,6 +20,34 @@ set_battery_replaced:
       required: false
       selector:
         datetime:
+    battery_level:
+      name: Initial battery level
+      description: Measured percentage just after replacement; required when importing historical dates.
+      required: false
+      selector:
+        number:
+          min: 0
+          max: 100
+          mode: box
+          unit_of_measurement: "%"
+    estimated:
+      name: Estimated replacement
+      description: Mark a date inferred from historical readings.
+      required: false
+      default: false
+      selector:
+        boolean:
+    uncertainty_hours:
+      name: Time uncertainty (hours)
+      description: Resolution or uncertainty of the historical timestamp.
+      required: false
+      default: 0
+      selector:
+        number:
+          min: 0
+          max: 87600
+          mode: box
+          unit_of_measurement: h
 check_battery_last_replaced:
   name: Check battery replaced
   description: Get or raise events for devices that haven't had their battery replaced.

@@ -757,6 +757,43 @@
         'state': 'unknown',
       }),
     }),
+    'sensor.door_battery_note_battery_days_to_10': dict({
+      'registry_entry': EntityRegistryEntrySnapshot({
+        'aliases': list([
+          None,
+        ]),
+        'area_id': None,
+        'capabilities': None,
+        'config_entry_id': <ANY>,
+        'config_subentry_id': <ANY>,
+        'device_class': None,
+        'disabled_by': <RegistryEntryDisabler.INTEGRATION: 'integration'>,
+        'domain': 'sensor',
+        'entity_category': <EntityCategory.DIAGNOSTIC: 'diagnostic'>,
+        'entity_id': 'sensor.door_battery_note_battery_days_to_10',
+        'has_entity_name': True,
+        'hidden_by': None,
+        'icon': None,
+        'id': <ANY>,
+        'labels': set({
+        }),
+        'name': None,
+        'object_id_base': None,
+        'options': dict({
+        }),
+        'original_device_class': <SensorDeviceClass.DURATION: 'duration'>,
+        'original_icon': None,
+        'original_name': 'Battery days to 10%',
+        'platform': 'battery_notes',
+        'previous_unique_id': None,
+        'suggested_object_id': 'door_battery_note_battery_days_to_10',
+        'supported_features': 0,
+        'translation_key': 'battery_days_to_10',
+        'unique_id': 'bn_door_battery_battery_days_to_10',
+        'unit_of_measurement': <UnitOfTime.DAYS: 'd'>,
+      }),
+      'state': None,
+    }),
     'sensor.door_battery_note_battery_last_replaced': dict({
       'registry_entry': EntityRegistryEntrySnapshot({
         'aliases': list([
@@ -1040,6 +1077,43 @@
         'state': 'unknown',
       }),
     }),
+    'sensor.door_battery_battery_days_to_10': dict({
+      'registry_entry': EntityRegistryEntrySnapshot({
+        'aliases': list([
+          None,
+        ]),
+        'area_id': None,
+        'capabilities': None,
+        'config_entry_id': <ANY>,
+        'config_subentry_id': <ANY>,
+        'device_class': None,
+        'disabled_by': <RegistryEntryDisabler.INTEGRATION: 'integration'>,
+        'domain': 'sensor',
+        'entity_category': <EntityCategory.DIAGNOSTIC: 'diagnostic'>,
+        'entity_id': 'sensor.door_battery_battery_days_to_10',
+        'has_entity_name': True,
+        'hidden_by': None,
+        'icon': None,
+        'id': <ANY>,
+        'labels': set({
+        }),
+        'name': None,
+        'object_id_base': None,
+        'options': dict({
+        }),
+        'original_device_class': <SensorDeviceClass.DURATION: 'duration'>,
+        'original_icon': None,
+        'original_name': 'Battery Battery days to 10%',
+        'platform': 'battery_notes',
+        'previous_unique_id': None,
+        'suggested_object_id': 'door_battery_battery_days_to_10',
+        'supported_features': 0,
+        'translation_key': 'battery_days_to_10',
+        'unique_id': 'bn_door_battery_battery_days_to_10',
+        'unit_of_measurement': <UnitOfTime.DAYS: 'd'>,
+      }),
+      'state': None,
+    }),
     'sensor.door_battery_battery_last_replaced': dict({
       'registry_entry': EntityRegistryEntrySnapshot({
         'aliases': list([
@@ -1322,6 +1396,43 @@
         'last_updated': <ANY>,
         'state': 'unknown',
       }),
+    }),
+    'sensor.door_battery_note_battery_days_to_10': dict({
+      'registry_entry': EntityRegistryEntrySnapshot({
+        'aliases': list([
+          None,
+        ]),
+        'area_id': None,
+        'capabilities': None,
+        'config_entry_id': <ANY>,
+        'config_subentry_id': <ANY>,
+        'device_class': None,
+        'disabled_by': <RegistryEntryDisabler.INTEGRATION: 'integration'>,
+        'domain': 'sensor',
+        'entity_category': <EntityCategory.DIAGNOSTIC: 'diagnostic'>,
+        'entity_id': 'sensor.door_battery_note_battery_days_to_10',
+        'has_entity_name': True,
+        'hidden_by': None,
+        'icon': None,
+        'id': <ANY>,
+        'labels': set({
+        }),
+        'name': None,
+        'object_id_base': None,
+        'options': dict({
+        }),
+        'original_device_class': <SensorDeviceClass.DURATION: 'duration'>,
+        'original_icon': None,
+        'original_name': 'Door battery note Battery days to 10%',
+        'platform': 'battery_notes',
+        'previous_unique_id': None,
+        'suggested_object_id': 'door_battery_note_battery_days_to_10',
+        'supported_features': 0,
+        'translation_key': 'battery_days_to_10',
+        'unique_id': 'bn_door_battery_battery_days_to_10',
+        'unit_of_measurement': <UnitOfTime.DAYS: 'd'>,
+      }),
+      'state': None,
     }),
     'sensor.door_battery_note_battery_last_replaced': dict({
       'registry_entry': EntityRegistryEntrySnapshot({
