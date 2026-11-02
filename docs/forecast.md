@@ -16,6 +16,10 @@ It uses the measured percentage at replacement, never an assumed 100%. Seven
 days and at least five lost percentage points are required. At 10% or below the
 result is zero. A missing baseline, unavailable source, or a report older than
 three days produces an unknown value and an explanatory `forecast_status`.
+When an MQTT source is `unknown` after startup, the sensor can use its last
+persisted measurement with the original timestamp (`reading_source:
+stored_report`). An explicitly unavailable source still has no forecast, and
+the same three-day freshness limit applies to restored measurements.
 
 The percentage is a device estimate, not a linear measurement of remaining
 energy. Temperature, motor use, battery chemistry and initial voltage settling

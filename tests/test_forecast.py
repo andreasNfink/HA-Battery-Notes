@@ -153,6 +153,14 @@ async def test_forecast_lifecycle(
     hass.states.async_set(battery_note_sensor.entity_id, "56")
     await hass.async_block_till_done()
     assert hass.states.get(entity.entity_id).state == "46"
+    # MQTT startup can have no retained state; persisted evidence keeps its age.
+    hass.states.async_set(battery_note_sensor.entity_id, "unknown")
+    await hass.async_block_till_done()
+    assert hass.states.get(entity.entity_id).state == "46"
+    assert (
+        hass.states.get(entity.entity_id).attributes["reading_source"]
+        == "stored_report"
+    )
     # Unknown source does not retain a seemingly valid lifetime estimate.
     hass.states.async_set(battery_note_sensor.entity_id, "unavailable")
     await hass.async_block_till_done()

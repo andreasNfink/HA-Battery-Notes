@@ -366,6 +366,7 @@ class BatteryNotesForecastSensor(BatteryNotesEntity, SensorEntity):
         super().__init__(hass, description, coordinator)
         self._attr_unique_id = unique_id
         self._forecast = BatteryForecast(None, "missing_baseline")
+        self._reading_source = "live"
         self._last_snapshot: tuple[Any, ...] | None = None
 
     async def async_added_to_hass(self) -> None:
@@ -393,9 +394,15 @@ class BatteryNotesForecastSensor(BatteryNotesEntity, SensorEntity):
         coordinator = self.coordinator
         baseline = coordinator.forecast_baseline
         current = coordinator.current_battery_level
+        self._reading_source = "live"
         if source := coordinator.wrapped_battery:
             source_state = self.hass.states.get(source.entity_id)
-            if source_state is None or not valid_level(source_state.state):
+            if source_state is not None and source_state.state == STATE_UNKNOWN:
+                # MQTT may have no retained state after HA starts. Reuse a real
+                # stored measurement with its original age; never poll the TRV.
+                current = coordinator.last_reported_level
+                self._reading_source = "stored_report"
+            elif source_state is None or not valid_level(source_state.state):
                 current = None
         self._forecast = estimate_days(
             baseline.get("level"),
@@ -427,6 +434,7 @@ class BatteryNotesForecastSensor(BatteryNotesEntity, SensorEntity):
             "replacement_source": baseline.get("source"),
             "uncertainty_hours": baseline.get("uncertainty_hours", 0),
             "method": "average_loss_since_replacement",
+            "reading_source": self._reading_source,
         }
 
 
