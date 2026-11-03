@@ -32,3 +32,7 @@ The fork extends `set_battery_replaced` with optional `battery_level`, `estimate
 `uncertainty_hours`, and bounded `trend_samples`. Keep these fields out of existing event payloads to
 preserve consumers. Historical imports without a measured start level must not
 use the current level as if it were historical.
+
+The fork also provides `import_battery_history` with bounded `trend_samples` and
+optional `detect_replacements`. It preserves replacement metadata and emits no
+replacement event; device/entity targeting follows the existing action contract.

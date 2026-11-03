@@ -406,7 +406,7 @@ class BatteryNotesForecastSensor(BatteryNotesEntity, SensorEntity):
                 current = None
         self._forecast = estimate_days(
             baseline.get("level"),
-            coordinator.last_replaced,
+            coordinator.forecast_started,
             float(current) if valid_level(current) else None,
             coordinator.last_reported,
             dt_util.utcnow(),
@@ -436,7 +436,12 @@ class BatteryNotesForecastSensor(BatteryNotesEntity, SensorEntity):
             "uncertainty_hours": baseline.get("uncertainty_hours", 0),
             "method": "daily_median_theil_sen",
             "settling_hours": 72,
-            "trend_window_days": 14,
+            "trend_window_days": 90,
+            "observation_started": baseline.get("observation_started"),
+            "replacement_known": valid_level(baseline.get("level")),
+            "trend_quality": "provisional"
+            if self._forecast.trend_days < 7
+            else "established",
             "trend_days": self._forecast.trend_days,
             "sample_days": self._forecast.sample_days,
             "daily_loss_percent": self._forecast.daily_loss,

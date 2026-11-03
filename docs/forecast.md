@@ -1,103 +1,75 @@
-# Battery lifetime forecast (Andreas fork)
+# Battery runtime forecast (local fork)
 
-This fork is based on upstream Battery Notes **3.7.2**. Existing integration,
-device, subentry and entity identifiers are preserved. Install **either** this
-fork or upstream for the `battery_notes` domain, never both.
+Enable the optional `battery_days_to_10` diagnostic sensor for each desired note.
+It estimates days until **10%**, leaving Battery+ as the original device percentage.
 
-## Days until 10%
+## Evidence and smoothing
 
-Percentage-based notes have an optional diagnostic sensor, `battery_days_to_10`.
-Enable it in the entity settings for the devices you want to monitor. It is
-disabled by default, so installing the fork does not add active forecasts to
-every device.
+The first **72 hours after replacement** are excluded, so the initial voltage
+settling cannot dominate the forecast. After that, at least **three full days**
+of observed history are required. Daily medians and the median of pairwise slopes
+(Theil-Sen) smooth quantisation and isolated anomalous days. A trend must explain
+at least **three percentage points** of decline. A short trend is marked
+`trend_quality: provisional`; from seven days it is `established`.
 
-The first **72 hours after replacement** are a settling phase (`settling`).
-Their percentage loss is excluded from the forecast, so the initial voltage
-settling of freshly charged cells cannot dominate the remaining lifetime.
-Battery+ remains the original percentage; this is not a capacity calibration.
+Prefer the last **14 days**; if discharge is too slow to resolve, extend to 30
+and then **90 days**. Missing days are not interpolated. Gaps longer than three
+days invalidate the corresponding window. The estimate is
+`ceil((current percentage - 10) / daily percentage-point loss)`.
+A plateau, including a sensor still reporting 100%, cannot supply a meaningful
+day count and stays `trend_unclear`. At or below 10% the estimate is zero.
+Missing/unavailable sources and measurements older than three days remain unknown.
+An MQTT source awaiting its first report may reuse a real persisted reading with
+its original timestamp (`reading_source: stored_report`).
 
-After settling, the integration keeps the first valid report per six-hour UTC
-slot, at most 60 samples per note. It computes the median for each completed UTC
-day and uses the most recent **14 days**. The slope is the median of all pairwise
-daily slopes separated by at least two days (Theil-Sen). Each day has equal
-weight; frequent reports and a single anomalous day cannot dominate the trend.
+A known replacement is useful but **not necessary** for a discharge trend.
+`import_battery_history` can establish an observation-only anchor without
+changing the replacement date or firing a replacement event. The first 72 hours
+of that observation are excluded conservatively as well. The attributes expose
+`replacement_known: false` and `observation_started`; an unknown replacement date
+is never invented from device creation or the first observed percentage.
 
-A forecast requires at least seven observed days spanning **seven full days
-after settling**, with no gap longer than three days. It also requires a positive
-trend corresponding to at least **three percentage points** across that span.
-Short/missing history gives `insufficient_data`; a flat, recovering or unresolved
-trend gives `trend_unclear`, not an extremely large lifetime estimate. There is
-no fallback to the old replacement-to-current average. The estimate is
-`ceil((current percent - 10) / daily percentage-point loss)`. Consequently it
-will not usually become available until 10–12 days after a new replacement.
+## Replacement and historical import
 
-At 10% or below the result is zero, even during settling. A missing baseline,
-unavailable source, or a report older than three days produces an unknown value
-and an explanatory `forecast_status`. Low-battery events remain unchanged.
-The diagnostic attributes include `daily_loss_percent`, `trend_days`,
-`sample_days`, `settling_hours` and `method: daily_median_theil_sen`.
-When an MQTT source is `unknown` after startup, the sensor can use its last
-persisted measurement with the original timestamp (`reading_source:
-stored_report`). An explicitly unavailable source still has no forecast, and
-the same three-day freshness limit applies to restored measurements.
+The replacement button and `set_battery_replaced` still work. Optional fields are
+`battery_level` (measured immediately after replacement), `estimated`,
+`uncertainty_hours`, and `trend_samples` (at most **140** timestamp/level pairs).
+When importing an existing known cycle, preserve its date and evidence flags.
+The action resets the old cycle, and never treats today's percentage as the
+historical initial level. Future and previous-cycle points are ignored.
 
-The percentage is a device estimate, not a linear measurement of remaining
-energy. Temperature, motor use, battery chemistry and initial voltage settling
-can change the discharge curve. Treat the result as a rough planning estimate,
-not a guaranteed replacement deadline.
+Use `import_battery_history` to merge samples without changing replacement
+metadata. It accepts `device_id` or `source_entity_id`, `trend_samples`, and an
+optional `detect_replacements` boolean. Samples must belong to one battery cycle;
+a >10-point rise in imported data suspends the forecast instead of mixing cycles.
+The action does not read recorder history itself.
 
-## Recording replacement evidence
-
-The existing replacement button and `battery_notes.set_battery_replaced` action
-still work. Confirm a current replacement after the new battery percentage has
-arrived. The action also accepts:
-
-- `battery_level`: measured percentage immediately after replacement; supply it
-  when importing a historical replacement date.
-- `estimated`: mark a date inferred from historical measurements.
-- `uncertainty_hours`: timestamp precision/uncertainty of that estimate.
-- `trend_samples`: optional list of up to 60 measured `time` (ISO timestamp) /
-  `level` (0–100 percentage) pairs from the same battery cycle. This can seed the
-  trend during a one-time historical import. Invalid values fail validation;
-  future/pre-replacement reports are ignored, settling samples are excluded,
-  and six-hour sampling/retention limits still apply. A >10-point rise within
-  imported evidence suspends the forecast as well. This action replaces the
-  baseline/history; preserve the recorded date, initial level and evidence flags
-  when importing an existing cycle. No recorder history is fetched by the action.
-
-Historical dates without an initial measurement intentionally have no forecast.
-Old dates defaulted by upstream from device creation are not used as evidence.
-The timestamp entity exposes the evidence source, uncertainty and initial level.
-
-A subsequent increase of **more than ten percentage points** suspends the
-forecast (`replacement_suspected`) until the replacement is confirmed. It does
-not silently change the recorded replacement date. A rise can also be a device
-reset or voltage recovery.
+By default a later rise of **more than ten percentage points** only suspends the
+forecast (`replacement_suspected`), preserving upstream behavior. For notes
+explicitly opted in using `detect_replacements: true`, the same rise records a
+new **estimated** replacement at the actual report time, clears the old trend,
+and starts a fresh 72-hour settling period. Manual replacement confirmations
+remain supported and preserve the opt-in. Exactly ten points is not a replacement.
+Voltage recovery or a device reset can resemble a replacement; inferred dates
+remain estimates.
 
 ## Performance and persistence
 
-The forecast does not scan recorder history, poll devices, or call network APIs.
-It uses at most 60 persisted samples per evidenced note and existing battery reports.
-Enabled forecast sensors check freshness every six hours. State writes occur
-only when the whole-day estimate, status or evidence changes. Baseline writes
-use the existing batched Battery Notes storage mechanism; new samples use the existing 15-minute report-save delay and at most four new slots
-per day. Calculation is bounded by 60 samples and at most 91 daily slope pairs.
+There are no runtime recorder scans, network calls or extra device polling.
+Keep the first report per six-hour UTC slot for the most recent 15 days and one
+observed value per older day, at most **140 records per note** and about 91 days.
+Daily medians weight each day equally. A fit considers at most 90 daily points
+and about 4,000 slopes, with a short window tried first. Reports and samples use
+existing batching and throttling; freshness checks run every six hours. Entity
+writes occur only when the estimate or diagnostic evidence changes.
 
-Historical reconstruction is a separate one-time operation. Persistent forecast
-records use an optional `battery_forecast` field in existing storage entries;
-legacy entries load without a migration. Existing baselines without samples
-start collecting after upgrade and show `insufficient_data` until enough
-post-settling evidence is available or explicitly imported. Upstream 3.7.2
-ignores unknown fields,
-so rollback preserves existing notes and entities but discards forecast metadata
-when upstream next saves its storage. Back up storage before switching versions.
+History reconstruction is a separate one-time operation. Persisted data lives
+in the existing optional `battery_forecast` dictionary. Old notes and baselines
+remain readable. Back up storage before rollback: upstream ignores forecast
+fields and may discard them on its next save.
 
 ## HACS maintenance
 
-Use the custom integration repository `andreasNfink/HA-Battery-Notes` and this
-fork's releases. Unregister/ignore the upstream HACS repository before installing
-the fork. Do not remove the configured Battery Notes integration or its devices.
-
-The `upstream` git remote remains `andrew-codechimp/HA-Battery-Notes`. Upstream
-updates are reviewed and merged into the fork, tested, then released with a
-distinct version. They are not applied automatically over the local extensions.
+Use `andreasNfink/HA-Battery-Notes` and this fork's releases. Keep the upstream
+HACS repository unregistered/ignored; retain configured Battery Notes entities.
+Upstream changes are reviewed and merged into the fork before releasing.

@@ -18,6 +18,7 @@
       'check_battery_last_replaced',
       'check_battery_last_reported',
       'check_battery_low',
+      'import_battery_history',
       'set_battery_replaced',
     ]),
   })
@@ -41,6 +42,7 @@
       'check_battery_last_replaced',
       'check_battery_last_reported',
       'check_battery_low',
+      'import_battery_history',
       'set_battery_replaced',
     ]),
   })

@@ -42,10 +42,15 @@ For setup and reload behavior, read [Repository and runtime architecture](archit
 The fork adds an optional `battery_forecast` dictionary to device/entity history.
 Missing dictionaries remain unknown; never seed an initial percentage from a
 legacy device-creation date. Replacement imports include the actual start level
-and evidence quality. A new >10-point rise suspends the estimate.
+and evidence quality. A new >10-point rise suspends the estimate unless the note explicitly opted
+into automatic estimated replacements via `detect_replacements`.
 
 Forecast `samples` are optional ISO timestamp/level pairs in `battery_forecast`.
-Keep at most 60 first-per-six-hour observations, exclude the first 72 hours,
+Keep at most 140 compacted observations (six-hour slots for 15 recent days,
+one per older day, about 91 days total), exclude the first 72 hours,
 and batch sample writes with `REPORTED_SAVE_DELAY`. A replacement clears the
 previous cycle; older baselines without samples remain readable but have no
 trend until enough observations arrive or are explicitly imported.
+
+Observation-only imports preserve the last-replaced timestamp and store an
+`observation_started` anchor without a fabricated initial percentage.

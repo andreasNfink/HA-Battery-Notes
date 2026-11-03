@@ -318,7 +318,7 @@
                 },
                 "trend_samples": {
                     "name": "Historical trend samples",
-                    "description": "Optional list of up to 60 measured time/level pairs from this battery cycle. The first 72 hours are excluded from the trend."
+                    "description": "Optional list of up to 140 measured time/level pairs from this battery cycle. The first 72 hours are excluded from the trend."
                 }
             },
             "name": "Set battery replaced"
@@ -360,6 +360,24 @@
                 }
             },
             "name": "Check battery low"
+        },
+        "import_battery_history": {
+            "name": "Import battery history",
+            "description": "Import observed percentages without changing the last replacement date.",
+            "fields": {
+                "device_id": {
+                    "name": "Device"
+                },
+                "source_entity_id": {
+                    "name": "Entity"
+                },
+                "trend_samples": {
+                    "name": "Historical samples"
+                },
+                "detect_replacements": {
+                    "name": "Detect replacements"
+                }
+            }
         }
     },
     "issues": {

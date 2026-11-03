@@ -32,7 +32,7 @@ set_battery_replaced:
           unit_of_measurement: "%"
     trend_samples:
       name: Historical trend samples
-      description: Optional list of up to 60 measured time/level pairs from this battery cycle. The first 72 hours are excluded from the trend.
+      description: Optional list of up to 140 measured time/level pairs from this battery cycle. The first 72 hours are excluded from the trend.
       required: false
       selector:
         object:
@@ -104,5 +104,30 @@ check_battery_low:
       description: Raise events for use in automation triggers.
       required: false
       default: true
+      selector:
+        boolean:
+
+import_battery_history:
+  name: Import battery history
+  description: Import observed percentages without changing the last replacement date.
+  fields:
+    device_id:
+      name: Device
+      selector:
+        device:
+    source_entity_id:
+      name: Entity
+      selector:
+        entity:
+    trend_samples:
+      name: Historical samples
+      description: Up to 140 measured time/level pairs; do not cross a battery replacement.
+      required: true
+      selector:
+        object:
+    detect_replacements:
+      name: Detect replacements
+      description: Treat future rises above ten percentage points as estimated replacements for this note.
+      default: false
       selector:
         boolean:

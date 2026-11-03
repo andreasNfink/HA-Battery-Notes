@@ -67,13 +67,14 @@ from .const import (
     DEFAULT_BATTERY_LOW_THRESHOLD,
     DOMAIN,
     EVENT_BATTERY_INCREASED,
+    EVENT_BATTERY_REPLACED,
     EVENT_BATTERY_THRESHOLD,
     LAST_REPLACED,
     LAST_REPORTED,
     LAST_REPORTED_LEVEL,
 )
 from .filters import LowOutlierFilter
-from .forecast import add_sample, valid_level
+from .forecast import add_sample, sample_points, valid_level
 from .store import REPORTED_SAVE_DELAY, SAVE_DELAY, BatteryNotesStorage
 
 _LOGGER = logging.getLogger(__name__)
@@ -654,14 +655,19 @@ class BatteryNotesSubentryCoordinator(DataUpdateCoordinator[None]):
                 and float(value) - float(previous) > 10
             ):
                 # A rise is evidence for review, not proof of a battery replacement.
-                self._save_forecast_baseline({**baseline, "suspended": True})
+                if baseline.get("detect_replacements"):
+                    self.record_replacement(
+                        dt_util.utcnow(), float(value), estimated=True
+                    )
+                    self.hass.bus.async_fire(EVENT_BATTERY_REPLACED, self.event_data())
+                else:
+                    self._save_forecast_baseline({**baseline, "suspended": True})
             now = dt_util.utcnow()
             baseline = self.forecast_baseline
             if (
                 valid_level(value)
-                and valid_level(baseline.get("level"))
                 and not baseline.get("suspended")
-                and (started := self.last_replaced)
+                and (started := self.forecast_started)
             ):
                 samples = add_sample(
                     baseline.get("samples", []), now, float(value), started
@@ -777,6 +783,59 @@ class BatteryNotesSubentryCoordinator(DataUpdateCoordinator[None]):
         elif self.device_id:
             self.async_update_device_config(self.device_id, data, save_delay=save_delay)
 
+    @property
+    def forecast_started(self) -> datetime | None:
+        """Use an observed-cycle anchor without inventing a replacement date."""
+        baseline = self.forecast_baseline
+        if valid_level(baseline.get("level")):
+            return self.last_replaced
+        if anchor := baseline.get("observation_started"):
+            return _ensure_utc(datetime.fromisoformat(str(anchor)))
+        return None
+
+    def import_forecast_history(
+        self, trend_samples: list[dict[str, Any]], *, detect_replacements: bool = False
+    ) -> None:
+        """Merge bounded evidence without changing replacement history or firing events."""
+        now = dt_util.utcnow()
+        baseline = self.forecast_baseline
+        points = sorted(
+            [
+                {"time": t, "level": v}
+                for t, v in sample_points(baseline.get("samples", []))
+            ]
+            + trend_samples,
+            key=lambda item: _ensure_utc(item["time"]),
+        )
+        points = [p for p in points if _ensure_utc(p["time"]) <= now]
+        if not points:
+            return
+        started = self.forecast_started or _ensure_utc(points[0]["time"])
+        samples: list[dict[str, Any]] = []
+        previous = None
+        suspended = baseline.get("suspended", False)
+        for point in points:
+            timestamp = _ensure_utc(point["time"])
+            if timestamp < started:
+                continue
+            value = float(point["level"])
+            if previous is not None and value - previous > 10:
+                suspended = True
+            previous = value
+            samples = add_sample(samples, timestamp, value, started)
+        self._save_forecast_baseline(
+            {
+                **baseline,
+                "observation_started": started.isoformat()
+                if not valid_level(baseline.get("level"))
+                else None,
+                "samples": samples,
+                "suspended": suspended,
+                "detect_replacements": detect_replacements,
+            }
+        )
+        self.async_set_updated_data(None)
+
     def record_replacement(
         self,
         replaced: datetime,
@@ -793,6 +852,7 @@ class BatteryNotesSubentryCoordinator(DataUpdateCoordinator[None]):
             current = self.current_battery_level
             if valid_level(current):
                 level = float(current)
+        detect_replacements = self.forecast_baseline.get("detect_replacements", False)
         samples: list[dict[str, Any]] = []
         suspended = False
         previous = level
@@ -828,6 +888,7 @@ class BatteryNotesSubentryCoordinator(DataUpdateCoordinator[None]):
             {
                 "level": level,
                 "source": "history_estimate" if estimated else "manual",
+                "detect_replacements": detect_replacements,
                 "uncertainty_hours": uncertainty_hours,
                 "suspended": suspended,
                 "samples": samples,

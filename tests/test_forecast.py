@@ -9,7 +9,11 @@ from custom_components.battery_notes.const import (
     DOMAIN,
     SERVICE_BATTERY_REPLACED_SCHEMA,
 )
-from custom_components.battery_notes.forecast import add_sample, estimate_days
+from custom_components.battery_notes.forecast import (
+    MAX_SAMPLES,
+    add_sample,
+    estimate_days,
+)
 from custom_components.battery_notes.store import STORAGE_KEY
 from freezegun.api import FrozenDateTimeFactory
 from pytest_homeassistant_custom_component.common import (
@@ -210,7 +214,7 @@ def test_settling_drop_does_not_set_slope(initial: float) -> None:
     result = estimate_days(initial, start, 58, NOW, NOW, samples=samples)
     assert result.days == 48
     assert result.daily_loss == 1
-    assert len(samples) <= 60
+    assert len(samples) <= MAX_SAMPLES
     assert all(
         datetime.fromisoformat(s["time"]) >= start + timedelta(hours=72)
         for s in samples
@@ -285,10 +289,10 @@ def test_sampling_is_bounded_and_does_not_weight_chattery_sources() -> None:
         samples = add_sample(samples, timestamp, 70, start)
         unchanged = add_sample(samples, timestamp + timedelta(minutes=1), 69, start)
         assert unchanged == samples
-    assert len(samples) <= 60
+    assert len(samples) <= MAX_SAMPLES
     assert (
         NOW - datetime.fromisoformat(samples[0]["time"])
-    ).total_seconds() <= 15 * 86400
+    ).total_seconds() <= 92 * 86400
 
 
 @pytest.mark.parametrize(
@@ -296,7 +300,7 @@ def test_sampling_is_bounded_and_does_not_weight_chattery_sources() -> None:
     [
         [{"time": NOW, "level": float("nan")}],
         [{"time": "invalid", "level": 50}],
-        [{"time": NOW, "level": 50}] * 61,
+        [{"time": NOW, "level": 50}] * (MAX_SAMPLES + 1),
     ],
 )
 def test_reject_invalid_or_oversized_history(payload: list[dict[str, Any]]) -> None:
@@ -348,3 +352,85 @@ async def test_import_ignores_other_cycles_and_future_without_polling(
         ],
     )
     assert coordinator.forecast_baseline["suspended"] is True
+
+
+def test_early_smoothed_trend_and_slow_sensor_window() -> None:
+    """A week-old TRV can forecast; slow sensors use longer observed history."""
+    recent = [
+        {"time": NOW - timedelta(days=d), "level": 60 + d} for d in range(6, -1, -1)
+    ]
+    early = estimate_days(100, NOW - timedelta(days=9), 60, NOW, NOW, samples=recent)
+    assert (early.days, early.status) == (50, "estimated")
+    slow = [
+        {"time": NOW - timedelta(days=d), "level": 40 + int(d / 10)}
+        for d in range(80, -1, -1)
+    ]
+    result = estimate_days(None, NOW - timedelta(days=90), 40, NOW, NOW, samples=slow)
+    assert result.status == "estimated"
+    assert result.days is not None
+    assert 250 <= result.days <= 350
+    assert result.trend_days > 30
+
+
+async def test_observed_history_preserves_date_reload_and_opt_in_replacement(
+    hass: HomeAssistant,
+    battery_note_config_entry: MockConfigEntry,
+    battery_note_sensor: er.RegistryEntry,
+    freezer: FrozenDateTimeFactory,
+    hass_storage: dict[str, Any],
+) -> None:
+    """No inferred date from observation alone; a later >10-point rise starts a cycle."""
+    freezer.move_to(NOW)
+    await setup_integration(hass, battery_note_config_entry)
+    coordinator = next(
+        iter(battery_note_config_entry.runtime_data.subentry_coordinators.values())
+    )
+    subentry = next(iter(battery_note_config_entry.subentries.values()))
+    target = {
+        key: subentry.data[key]
+        for key in ("device_id", "source_entity_id")
+        if key in subentry.data
+    }
+    previous_date = coordinator.last_replaced
+    events = []
+    hass.bus.async_listen("battery_notes_battery_replaced", events.append)
+    await hass.services.async_call(
+        DOMAIN,
+        "import_battery_history",
+        {
+            **target,
+            "detect_replacements": True,
+            "trend_samples": [
+                {"time": NOW - timedelta(days=d), "level": 55 + d}
+                for d in range(20, -1, -1)
+            ],
+        },
+        blocking=True,
+    )
+    await hass.async_block_till_done()
+    assert coordinator.last_replaced == previous_date
+    assert coordinator.forecast_baseline.get("level") is None
+    assert coordinator.forecast_started == NOW - timedelta(days=20)
+    assert not events
+    await battery_note_config_entry.runtime_data.store.async_save()
+    assert hass_storage[STORAGE_KEY]["data"]
+    await hass.config_entries.async_reload(battery_note_config_entry.entry_id)
+    await hass.async_block_till_done()
+    coordinator = next(
+        iter(battery_note_config_entry.runtime_data.subentry_coordinators.values())
+    )
+    assert coordinator.forecast_baseline["detect_replacements"]
+    assert coordinator.last_replaced == previous_date
+    # Exact threshold is not a replacement; more than ten is explicitly opted in.
+    hass.states.async_set(battery_note_sensor.entity_id, "65")
+    await hass.async_block_till_done()
+    assert coordinator.last_replaced == previous_date
+    freezer.tick(timedelta(hours=1))
+    hass.states.async_set(battery_note_sensor.entity_id, "76")
+    await hass.async_block_till_done()
+    assert coordinator.last_replaced == dt_util.utcnow()
+    assert coordinator.forecast_baseline["level"] == 76
+    assert coordinator.forecast_baseline["source"] == "history_estimate"
+    assert coordinator.forecast_baseline["detect_replacements"]
+    assert not coordinator.forecast_baseline["samples"]
+    assert len(events) == 1

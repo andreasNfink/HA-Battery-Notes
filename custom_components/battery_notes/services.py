@@ -40,6 +40,7 @@ from .const import (
     SERVICE_DATA_DAYS_LAST_REPLACED,
     SERVICE_DATA_DAYS_LAST_REPORTED,
     SERVICE_DATA_RAISE_EVENTS,
+    SERVICE_IMPORT_BATTERY_HISTORY_SCHEMA,
 )
 from .coordinator import BatteryNotesConfigEntry
 
@@ -57,6 +58,13 @@ def _response_item(data: dict[str, Any]) -> dict[str, Any]:
 @callback
 def async_setup_services(hass: HomeAssistant) -> None:
     """Set up the services for the Battery Notes integration."""
+
+    hass.services.async_register(
+        DOMAIN,
+        "import_battery_history",
+        _async_import_battery_history,
+        schema=SERVICE_IMPORT_BATTERY_HISTORY_SCHEMA,
+    )
 
     hass.services.async_register(
         DOMAIN,
@@ -88,6 +96,37 @@ def async_setup_services(hass: HomeAssistant) -> None:
         schema=SERVICE_CHECK_BATTERY_LOW_SCHEMA,
         supports_response=SupportsResponse.OPTIONAL,
     )
+
+
+async def _async_import_battery_history(call: ServiceCall) -> None:
+    """Import evidence while preserving the replacement timestamp and event contract."""
+    source = call.data.get(ATTR_SOURCE_ENTITY_ID)
+    device = call.data.get(ATTR_DEVICE_ID)
+    matches = [
+        coordinator
+        for entry in call.hass.config_entries.async_loaded_entries(DOMAIN)
+        for coordinator in (
+            cast(BatteryNotesConfigEntry, entry).runtime_data.subentry_coordinators
+            or {}
+        ).values()
+        if not coordinator.is_orphaned
+        and (
+            coordinator.source_entity_id == source
+            if source
+            else coordinator.device_id == device
+        )
+    ]
+    if not matches:
+        raise HomeAssistantError(
+            translation_domain=DOMAIN,
+            translation_key="not_configured_in_battery_notes",
+            translation_placeholders={"source": source or device or ""},
+        )
+    coordinator = next((c for c in matches if not c.source_entity_id), matches[0])
+    coordinator.import_forecast_history(
+        call.data["trend_samples"], detect_replacements=call.data["detect_replacements"]
+    )
+    await coordinator.async_request_refresh()
 
 
 async def _async_battery_replaced(call: ServiceCall) -> ServiceResponse:

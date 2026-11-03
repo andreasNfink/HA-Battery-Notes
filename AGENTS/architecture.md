@@ -75,9 +75,11 @@ For source and registry behavior, read [Entity identity and lifecycle](entities.
 ## Fork forecast
 
 `forecast.py` contains bounded six-hour sampling, daily medians and a robust
-14-day Theil-Sen trend after 72 hours of settling. `sensor.py` exposes an
+adaptive 14/30/90-day Theil-Sen trend after 72 hours of settling. `sensor.py` exposes an
 optional, disabled-by-default `battery_days_to_10` sensor. The coordinator stores
-a baseline and at most 60 samples through `record_replacement` and existing
+a baseline and at most 140 compacted samples through `record_replacement` and existing
 reports; no runtime recorder queries. Historical sample imports are optional
-on `set_battery_replaced`. Never reuse the initial settling drop as a fallback.
+on `set_battery_replaced`; `import_battery_history` merges evidence without
+changing replacement metadata. Observation-only anchors and explicit per-note
+automatic replacement detection are described in `docs/forecast.md`. Never reuse the initial settling drop as a fallback.
 See `docs/forecast.md` for evidence and update semantics.

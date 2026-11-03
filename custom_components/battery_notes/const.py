@@ -116,7 +116,7 @@ SERVICE_BATTERY_REPLACED_SCHEMA = vol.All(
                 vol.Coerce(float), finite_number, vol.Range(min=0, max=100)
             ),
             vol.Optional("trend_samples"): vol.All(
-                vol.Length(max=60),
+                vol.Length(max=140),
                 [
                     vol.Schema(
                         {
@@ -138,6 +138,33 @@ SERVICE_BATTERY_REPLACED_SCHEMA = vol.All(
     ),
     cv.has_at_least_one_key(ATTR_DEVICE_ID, ATTR_SOURCE_ENTITY_ID),
 )
+
+SERVICE_IMPORT_BATTERY_HISTORY_SCHEMA = vol.All(
+    vol.Schema(
+        {
+            vol.Optional(ATTR_DEVICE_ID): cv.string,
+            vol.Optional(ATTR_SOURCE_ENTITY_ID): cv.string,
+            vol.Required("trend_samples"): vol.All(
+                vol.Length(min=1, max=140),
+                [
+                    vol.Schema(
+                        {
+                            vol.Required("time"): cv.datetime,
+                            vol.Required("level"): vol.All(
+                                vol.Coerce(float),
+                                finite_number,
+                                vol.Range(min=0, max=100),
+                            ),
+                        }
+                    )
+                ],
+            ),
+            vol.Optional("detect_replacements", default=False): cv.boolean,
+        }
+    ),
+    cv.has_at_least_one_key(ATTR_DEVICE_ID, ATTR_SOURCE_ENTITY_ID),
+)
+
 
 SERVICE_CHECK_BATTERY_LAST_REPLACED_SCHEMA = vol.Schema(
     {

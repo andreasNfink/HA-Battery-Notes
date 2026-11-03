@@ -318,7 +318,7 @@
                 },
                 "trend_samples": {
                     "name": "Historische Trendmesswerte",
-                    "description": "Optionale Liste mit bis zu 60 gemessenen time/level-Paaren dieses Batteriezyklus. Die ersten 72 Stunden werden aus dem Trend ausgeschlossen."
+                    "description": "Optionale Liste mit bis zu 140 gemessenen time/level-Paaren dieses Batteriezyklus. Die ersten 72 Stunden werden aus dem Trend ausgeschlossen."
                 }
             },
             "name": "Batteriewechsel festlegen"
@@ -360,6 +360,24 @@
                 }
             },
             "name": "Prüfe auf schwache Batterien"
+        },
+        "import_battery_history": {
+            "name": "Batterieverlauf importieren",
+            "description": "Messwerte importieren, ohne den letzten Batteriewechsel zu ändern.",
+            "fields": {
+                "device_id": {
+                    "name": "Gerät"
+                },
+                "source_entity_id": {
+                    "name": "Entität"
+                },
+                "trend_samples": {
+                    "name": "Historische Messwerte"
+                },
+                "detect_replacements": {
+                    "name": "Batteriewechsel erkennen"
+                }
+            }
         }
     },
     "issues": {

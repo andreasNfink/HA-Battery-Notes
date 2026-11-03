@@ -67,3 +67,11 @@ See how to use this action in the [community contributions](./community.md)
 | <div style="width:200px">Data attribute</div> | Optional | Description                                                                              |
 | --------------------------------------------- | -------- | ---------------------------------------------------------------------------------------- |
 | `raise_events`                                | `yes`    | Raise events for for each matching device for use in automation triggers (default true). |
+
+## Import battery history (fork)
+
+`battery_notes.import_battery_history` merges up to 140 measured `time`/`level`
+pairs for a device or source entity without changing its replacement date.
+Optional `detect_replacements: true` opts only that note into recording future
+rises greater than ten percentage points as estimated replacements. See
+[Forecast evidence and performance](forecast.md).
