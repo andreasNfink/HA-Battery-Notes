@@ -27,6 +27,7 @@ Paths below are relative to `custom_components/battery_notes/` unless specified.
 | `repairs.py` | Missing-source removal and composite-device reassociation flows |
 | `template_helpers.py` | Shared template tracking, startup, cleanup, and self-reference protection |
 | `filters.py` | Low-outlier filtering of battery reports |
+| `percentage.py` | Opt-in per-note NiMH calibration; raw persistence and replacement detection are preserved |
 | `diagnostics.py` | Config entry, per-note runtime, source metadata, and library-match diagnostics |
 | `translations/en.json` / `icons.json` | English UI strings / entity and action icons |
 | Root `library/` | Community device data and its JSON schema |

@@ -404,14 +404,20 @@ class BatteryNotesForecastSensor(BatteryNotesEntity, SensorEntity):
                 self._reading_source = "stored_report"
             elif source_state is None or not valid_level(source_state.state):
                 current = None
+        profile = coordinator.percentage_profile
         self._forecast = estimate_days(
-            baseline.get("level"),
+            profile.apply(baseline.get("level")),
             coordinator.forecast_started,
-            float(current) if valid_level(current) else None,
+            profile.apply(current),
             coordinator.last_reported,
             dt_util.utcnow(),
             suspended=baseline.get("suspended", False),
-            samples=baseline.get("samples", []),
+            samples=[
+                {**sample, "level": level}
+                for sample in baseline.get("samples", [])
+                if (level := profile.trend_level(sample.get("level"))) is not None
+            ],
+            settling_hours=profile.settling_hours,
         )
         snapshot = (self._forecast, tuple(self.extra_state_attributes.items()))
         if snapshot != self._last_snapshot:
@@ -430,12 +436,14 @@ class BatteryNotesForecastSensor(BatteryNotesEntity, SensorEntity):
         return {
             "forecast_status": self._forecast.status,
             "target_battery_level": 10,
-            "initial_battery_level": baseline.get("level"),
+            "initial_battery_level": self.coordinator.percentage_profile.apply(
+                baseline.get("level")
+            ),
             "battery_last_replaced": self.coordinator.last_replaced,
             "replacement_source": baseline.get("source"),
             "uncertainty_hours": baseline.get("uncertainty_hours", 0),
             "method": "daily_median_theil_sen",
-            "settling_hours": 72,
+            "settling_hours": self.coordinator.percentage_profile.settling_hours,
             "trend_window_days": 90,
             "observation_started": baseline.get("observation_started"),
             "replacement_known": valid_level(baseline.get("level")),
@@ -469,6 +477,10 @@ class BatteryNotesBatteryPlusBaseSensor(BatteryNotesEntity, RestoreSensor):
             ATTR_DEVICE_ID,
             ATTR_SOURCE_ENTITY_ID,
             ATTR_DEVICE_NAME,
+            "raw_battery_level",
+            "battery_percentage_profile",
+            "nimh_full_level",
+            "nimh_settled_level",
         }
     )
 
@@ -513,6 +525,7 @@ class BatteryNotesBatteryPlusBaseSensor(BatteryNotesEntity, RestoreSensor):
 
         self._last_ha_state_write: datetime | None = None
         self._last_written_battery_level: float | None = None
+        self._last_written_raw_battery_level: str | None = None
         self._last_written_last_replaced: datetime | None = None
         self._last_written_available: bool | None = None
 
@@ -535,6 +548,8 @@ class BatteryNotesBatteryPlusBaseSensor(BatteryNotesEntity, RestoreSensor):
         if self._last_ha_state_write is not None:
             if (
                 current_battery_level == self._last_written_battery_level
+                and self.coordinator.current_battery_level
+                == self._last_written_raw_battery_level
                 and current_last_replaced == self._last_written_last_replaced
                 and self.available == self._last_written_available
                 and (dt_util.utcnow() - self._last_ha_state_write).total_seconds()
@@ -544,6 +559,7 @@ class BatteryNotesBatteryPlusBaseSensor(BatteryNotesEntity, RestoreSensor):
 
         self._last_ha_state_write = dt_util.utcnow()
         self._last_written_battery_level = current_battery_level
+        self._last_written_raw_battery_level = self.coordinator.current_battery_level
         self._last_written_last_replaced = current_last_replaced
         self._last_written_available = self.available
         self.async_write_ha_state()
@@ -564,6 +580,17 @@ class BatteryNotesBatteryPlusBaseSensor(BatteryNotesEntity, RestoreSensor):
             ATTR_BATTERY_LAST_REPORTED: self.coordinator.last_reported,
             ATTR_BATTERY_LAST_REPORTED_LEVEL: self.coordinator.last_reported_level,
         }
+
+        profile = self.coordinator.percentage_profile
+        if profile.name != "none":
+            attrs.update(
+                battery_percentage_profile=profile.name,
+                raw_battery_level=float(self.coordinator.current_battery_level)
+                if valid_level(self.coordinator.current_battery_level)
+                else None,
+                nimh_full_level=profile.full,
+                nimh_settled_level=profile.settled,
+            )
 
         if self.enable_replaced:
             attrs[ATTR_BATTERY_LAST_REPLACED] = self.coordinator.last_replaced

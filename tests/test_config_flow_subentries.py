@@ -521,6 +521,49 @@ async def test_reconfigure_suggested_values(
     assert mock_subentry.data == original_data
 
 
+async def test_reconfigure_nimh_profile(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_subentry: ConfigSubentry,
+) -> None:
+    """Validate, persist custom calibration, and clear it without changing identity."""
+    result = await mock_config_entry.start_subentry_reconfigure_flow(
+        hass, mock_subentry.subentry_id
+    )
+    changes = {
+        **deepcopy(BATTERY_INPUT),
+        "battery_percentage_profile": "nimh",
+    }
+    changes[CONF_ADVANCED_SETTINGS].update(nimh_full_level=80, nimh_settled_level=85)
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"], deepcopy(changes)
+    )
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {"base": "invalid_nimh_levels"}
+    assert "battery_percentage_profile" not in mock_subentry.data
+    changes[CONF_ADVANCED_SETTINGS]["nimh_settled_level"] = 74
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"], deepcopy(changes)
+    )
+    assert result["reason"] == "reconfigure_successful"
+    updated = mock_config_entry.subentries[mock_subentry.subentry_id]
+    assert updated.data["battery_percentage_profile"] == "nimh"
+    assert updated.data[CONF_ADVANCED_SETTINGS]["nimh_full_level"] == 80
+    assert updated.data[CONF_ADVANCED_SETTINGS]["nimh_settled_level"] == 74
+    assert updated.unique_id == mock_subentry.unique_id
+    result = await mock_config_entry.start_subentry_reconfigure_flow(
+        hass, updated.subentry_id
+    )
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"],
+        {**deepcopy(BATTERY_INPUT), "battery_percentage_profile": "none"},
+    )
+    assert result["reason"] == "reconfigure_successful"
+    updated = mock_config_entry.subentries[mock_subentry.subentry_id]
+    assert "battery_percentage_profile" not in updated.data
+    assert "nimh_full_level" not in updated.data[CONF_ADVANCED_SETTINGS]
+
+
 @pytest.mark.parametrize(
     ("name_input", "expected_title"),
     [

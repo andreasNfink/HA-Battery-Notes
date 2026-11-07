@@ -38,6 +38,12 @@ Use `TemplateTrackingMixin` for template entities, including startup scheduling,
 error handling, listener cleanup, and loop detection. Avoid duplicating that
 machinery in each platform.
 
+The optional `battery_percentage_profile: nimh` maps Battery+ and numeric low
+thresholds through `percentage.py`. Keep `current_battery_level`, last-reported
+storage, replacement levels, samples, imports and increase detection raw. Forecasts
+transform raw evidence on read; never persist corrected samples or apply the
+profile twice. Existing notes default to the unchanged percentage scale.
+
 ## Related guidance
 
 For public action payloads, read [Actions and responses](actions.md). For persisted report history, read [Storage, migrations, and repairs](storage-and-migrations.md).

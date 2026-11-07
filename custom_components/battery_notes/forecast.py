@@ -97,6 +97,7 @@ def estimate_days(  # noqa: PLR0911, PLR0913
     *,
     suspended: bool = False,
     samples: list[dict[str, Any]] | None = None,
+    settling_hours: int = SETTLING_HOURS,
 ) -> BatteryForecast:
     """Use daily medians and a robust slope after the initial voltage settling."""
     if not valid_level(current_level) or reported is None:
@@ -110,7 +111,7 @@ def estimate_days(  # noqa: PLR0911, PLR0913
         return BatteryForecast(None, "replacement_suspected")
     if started is None or (not valid_level(initial_level) and not samples):
         return BatteryForecast(None, "missing_baseline")
-    settled = started + timedelta(hours=SETTLING_HOURS)
+    settled = started + timedelta(hours=settling_hours)
     if reported < settled:
         return BatteryForecast(None, "settling")
     # Prefer recent behavior; only widen the window for slow, unresolved discharge.

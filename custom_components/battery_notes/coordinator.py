@@ -56,10 +56,13 @@ from .const import (
     CONF_BATTERY_INCREASE_THRESHOLD,
     CONF_BATTERY_LOW_TEMPLATE,
     CONF_BATTERY_LOW_THRESHOLD,
+    CONF_BATTERY_PERCENTAGE_PROFILE,
     CONF_BATTERY_PERCENTAGE_TEMPLATE,
     CONF_BATTERY_QUANTITY,
     CONF_BATTERY_TYPE,
     CONF_FILTER_OUTLIERS,
+    CONF_NIMH_FULL_LEVEL,
+    CONF_NIMH_SETTLED_LEVEL,
     CONF_NOTE,
     CONF_RETAIN_STATE,
     CONF_SOURCE_ENTITY_ID,
@@ -75,6 +78,7 @@ from .const import (
 )
 from .filters import LowOutlierFilter
 from .forecast import add_sample, sample_points, valid_level
+from .percentage import DEFAULT_NIMH_FULL, DEFAULT_NIMH_SETTLED, PercentageProfile
 from .store import REPORTED_SAVE_DELAY, SAVE_DELAY, BatteryNotesStorage
 
 _LOGGER = logging.getLogger(__name__)
@@ -150,7 +154,7 @@ class BatteryNotesSubentryCoordinator(DataUpdateCoordinator[None]):
     _outlier_filter: LowOutlierFilter | None = None
     _link_retry_delay: timedelta = timedelta(minutes=2)
 
-    def __init__(  # noqa: PLR0912
+    def __init__(  # noqa: PLR0912, PLR0915
         self,
         hass: HomeAssistant,
         config_entry: BatteryNotesConfigEntry,
@@ -199,6 +203,13 @@ class BatteryNotesSubentryCoordinator(DataUpdateCoordinator[None]):
         self.battery_percentage_template = self.subentry.data[
             CONF_ADVANCED_SETTINGS
         ].get(CONF_BATTERY_PERCENTAGE_TEMPLATE, None)
+
+        advanced = self.subentry.data[CONF_ADVANCED_SETTINGS]
+        self.percentage_profile = PercentageProfile(
+            self.subentry.data.get(CONF_BATTERY_PERCENTAGE_PROFILE, "none"),
+            float(advanced.get(CONF_NIMH_FULL_LEVEL, DEFAULT_NIMH_FULL)),
+            float(advanced.get(CONF_NIMH_SETTLED_LEVEL, DEFAULT_NIMH_SETTLED)),
+        )
 
         if self.subentry.data[CONF_ADVANCED_SETTINGS].get(CONF_FILTER_OUTLIERS, False):
             self._outlier_filter = LowOutlierFilter(window_size=3, radius=80)
@@ -978,9 +989,8 @@ class BatteryNotesSubentryCoordinator(DataUpdateCoordinator[None]):
             if self.current_battery_level is not None and validate_is_float(
                 self.current_battery_level
             ):
-                return bool(
-                    float(self.current_battery_level) < self.battery_low_threshold
-                )
+                level = self.percentage_profile.apply(self.current_battery_level)
+                return level is not None and level < self.battery_low_threshold
         elif self.wrapped_battery_low:
             return self.battery_low_binary_state
 
@@ -989,12 +999,18 @@ class BatteryNotesSubentryCoordinator(DataUpdateCoordinator[None]):
     @property
     def rounded_battery_level(self) -> float:
         """Return the battery level, rounded if preferred."""
-        return self._rounded_level(self.current_battery_level)
+        value = self.current_battery_level
+        if self.percentage_profile.name != "none":
+            value = self.percentage_profile.apply(value)
+        return self._rounded_level(value)
 
     @property
     def rounded_previous_battery_level(self) -> float:
         """Return the previous battery level, rounded if preferred."""
-        return self._rounded_level(self._previous_battery_level)
+        value: Any = self._previous_battery_level
+        if self.percentage_profile.name != "none":
+            value = self.percentage_profile.apply(value)
+        return self._rounded_level(value)
 
     def _rounded_level(self, value) -> float:
         """Round the level, if preferred."""

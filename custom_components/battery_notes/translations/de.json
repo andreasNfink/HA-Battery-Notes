@@ -89,11 +89,13 @@
                         "battery_quantity": "Anzahl Batterien",
                         "note": "Notiz",
                         "battery_low_threshold": "Schwellenwert für eine leere Batterie",
-                        "battery_increase_threshold": "Batterieanstieg-Schwellenwert"
+                        "battery_increase_threshold": "Batterieanstieg-Schwellenwert",
+                        "battery_percentage_profile": "Prozentkorrektur"
                     },
                     "data_description": {
                         "battery_low_threshold": "0 verwendet den globalen Standardschwellenwert.",
-                        "battery_increase_threshold": "Der Schwellenwert ist die Differenz der Erhöhung zwischen dem vorherigen und dem aktuellen Batteriestand.\n0 verwendet den globalen Standardschwellenwert."
+                        "battery_increase_threshold": "Der Schwellenwert ist die Differenz der Erhöhung zwischen dem vorherigen und dem aktuellen Batteriestand.\n0 verwendet den globalen Standardschwellenwert.",
+                        "battery_percentage_profile": "NiMH/LSD-NiMH für AA-/AAA-Akkus. Standard: 83 % Gerätewert → 100 %, 77 % → 97 %, darunter linear bis 0. Pro Gerätemodell kalibrieren; keine exakte Kapazitätsmessung."
                     },
                     "sections": {
                         "advanced_settings": {
@@ -102,13 +104,17 @@
                                 "battery_percentage_template": "Vorlage zur Ermittlung eines Prozentwertes für den Batterieladezustand.",
                                 "battery_low_template": "Vorlage zur Ermittlung einer leeren Batterie.",
                                 "retain_state": "Status beibehalten",
-                                "filter_outliers": "Ausreißer filtern"
+                                "filter_outliers": "Ausreißer filtern",
+                                "nimh_full_level": "NiMH: Gerätewert bei voller Ladung",
+                                "nimh_settled_level": "NiMH: Gerätewert nach Einschwingen"
                             },
                             "data_description": {
                                 "battery_percentage_template": "Vorlage zur Ermittlung eines Prozentwertes für den Batterieladezustand.\nNur für Geräte, die den Füllstand der Batterie nicht als Prozentwert anzeigen.",
                                 "battery_low_template": "Vorlage zur Ermittlung einer leeren Batterie; muss \"wahr\" (true) zurückmelden, wenn die Batterie leer ist.\nWird nur benötigt, wenn der Schwellenwert für eine leere Batterie nicht dem Standardwert entspricht.",
                                 "retain_state": "Behalten Sie den letzten Batteriestatus bei, wenn die Quellentität nicht verfügbar ist.\nNützlich für Geräte, die in den Ruhemodus wechseln und nicht verfügbar werden.",
-                                "filter_outliers": "Größere Sprünge des Ladezustandes der Batterie bei Geräten ausfiltern, die ihren Ladezustand nur sporadisch mitteilen, um fehlerhafte Auslösungen zu verhindern."
+                                "filter_outliers": "Größere Sprünge des Ladezustandes der Batterie bei Geräten ausfiltern, die ihren Ladezustand nur sporadisch mitteilen, um fehlerhafte Auslösungen zu verhindern.",
+                                "nimh_full_level": "Optional, Standard 83. Dieser Rohwert wird als 100 % angezeigt.",
+                                "nimh_settled_level": "Optional, Standard 77. Dieser Rohwert wird als 97 % angezeigt. Muss kleiner als der Vollwert sein; darunter linear bis 0."
                             }
                         }
                     }
@@ -125,12 +131,14 @@
                         "battery_quantity": "Anzahl Batterien",
                         "note": "Notiz",
                         "battery_low_threshold": "Schwellenwert für eine leere Batterie",
-                        "battery_increase_threshold": "Batterieanstieg-Schwellenwert"
+                        "battery_increase_threshold": "Batterieanstieg-Schwellenwert",
+                        "battery_percentage_profile": "Prozentkorrektur"
                     },
                     "data_description": {
                         "name": "Wenn du das Feld leer lässt, wird der Gerätename genommen.",
                         "battery_low_threshold": "0 verwendet den globalen Standardschwellenwert.",
-                        "battery_increase_threshold": "Der Schwellenwert ist die Differenz der Erhöhung zwischen dem vorherigen und dem aktuellen Batteriestand.\n0 verwendet den globalen Standardschwellenwert"
+                        "battery_increase_threshold": "Der Schwellenwert ist die Differenz der Erhöhung zwischen dem vorherigen und dem aktuellen Batteriestand.\n0 verwendet den globalen Standardschwellenwert",
+                        "battery_percentage_profile": "NiMH/LSD-NiMH für AA-/AAA-Akkus. Standard: 83 % Gerätewert → 100 %, 77 % → 97 %, darunter linear bis 0. Pro Gerätemodell kalibrieren; keine exakte Kapazitätsmessung."
                     },
                     "sections": {
                         "advanced_settings": {
@@ -139,13 +147,17 @@
                                 "battery_percentage_template": "Vorlage zur Ermittlung eines Prozentwertes für den Batterieladezustand",
                                 "battery_low_template": "Vorlage zur Ermittlung, ob die Batterie leer ist.",
                                 "retain_state": "Status beibehalten",
-                                "filter_outliers": "Ausreißer filtern"
+                                "filter_outliers": "Ausreißer filtern",
+                                "nimh_full_level": "NiMH: Gerätewert bei voller Ladung",
+                                "nimh_settled_level": "NiMH: Gerätewert nach Einschwingen"
                             },
                             "data_description": {
                                 "battery_percentage_template": "Vorlage zur Ermittlung eines Prozentwertes für den Batterieladezustand.\nNur für Geräte, die den Batterieladezustand nicht als Prozentwert  anzeigen.",
                                 "battery_low_template": "Vorlage zur Ermittlung einer leeren Batterie; muss \"wahr\" (true) zurückmelden, wenn die Batterie leer ist.\nWird nur benötigt, wenn der Schwellenwert für eine leere Batterie nicht dem Standardwert entspricht.",
                                 "retain_state": "Behalten Sie den letzten Batteriestatus bei, wenn die Quellentität nicht verfügbar ist.\nNützlich für Geräte, die in den Ruhemodus wechseln und nicht verfügbar werden.",
-                                "filter_outliers": "Filtere größere Sprünge des Ladezustandes der Batterie bei Geräten, die ihren Ladezustand nur sporadisch mitteilen, um fehlerhafte Auslösungen zu verhindern."
+                                "filter_outliers": "Filtere größere Sprünge des Ladezustandes der Batterie bei Geräten, die ihren Ladezustand nur sporadisch mitteilen, um fehlerhafte Auslösungen zu verhindern.",
+                                "nimh_full_level": "Optional, Standard 83. Dieser Rohwert wird als 100 % angezeigt.",
+                                "nimh_settled_level": "Optional, Standard 77. Dieser Rohwert wird als 97 % angezeigt. Muss kleiner als der Vollwert sein; darunter linear bis 0."
                             }
                         }
                     }
@@ -158,7 +170,8 @@
             "error": {
                 "unknown": "Ein unbekannter Fehler ist aufgetreten.",
                 "unconfigurable_entity": "Es ist nicht möglich, diese Entität durch \"Battery Notes\" beobachten zu lassen.",
-                "orphaned_battery_note": "Das zugeordnete Gerät für diesen Eintrag in \"Battery Notes\" existiert nicht mehr."
+                "orphaned_battery_note": "Das zugeordnete Gerät für diesen Eintrag in \"Battery Notes\" existiert nicht mehr.",
+                "invalid_nimh_levels": "NiMH-Kalibrierung: 0 < Einschwingwert < Vollwert ≤ 100 erforderlich."
             }
         }
     },
@@ -423,6 +436,14 @@
     "exceptions": {
         "not_configured_in_battery_notes": {
             "message": "{source} ist in Battery Notes nicht konfiguriert."
+        }
+    },
+    "selector": {
+        "battery_percentage_profile": {
+            "options": {
+                "none": "Unverändert",
+                "nimh": "NiMH / LSD-NiMH (AA/AAA-Akkus)"
+            }
         }
     }
 }

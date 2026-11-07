@@ -1,7 +1,39 @@
 # Battery runtime forecast (local fork)
 
 Enable the optional `battery_days_to_10` diagnostic sensor for each desired note.
-It estimates days until **10%**, leaving Battery+ as the original device percentage.
+It estimates days until **10%** on the same percentage scale as Battery+.
+
+## NiMH percentage correction
+
+In a battery note's reconfiguration form, select **Percentage correction →
+NiMH / LSD-NiMH** for rechargeable AA/AAA cells in devices calibrated for alkaline
+batteries. The default remains **Unchanged** for all existing and new notes.
+The optional additional settings are `nimh_full_level` (default **83**) and
+`nimh_settled_level` (default **77**), with `0 < settled < full <= 100`.
+
+The piecewise-linear calibration is **0 → 0%, 77 → 97%, 83 → 100%**.
+Higher valid reports are capped at 100%; the initial six raw percentage points
+only account for three displayed points. Below the settled level the display is
+linear to zero. These are provisional calibration values, not measured capacity:
+NiMH's flat voltage plateau, temperature, load and the device's own conversion
+prevent a precise state-of-charge estimate. Do not apply this profile to lithium
+cells or to devices already reporting an appropriate rechargeable-cell percentage.
+See the [Energizer NiMH handbook](https://data.energizer.com/wp-content/uploads/2020/11/nimhhandbook_ver2-2.pdf).
+
+Battery+, numeric low-battery thresholds and forecasts use corrected percentages,
+including a forecast target of **10% corrected**. Low-battery templates retain
+their explicit precedence. Templates that generate a percentage run before this
+correction; do not also put the same correction in the template. Binary low-only
+devices cannot provide a percentage to calibrate.
+
+Source entities, stored last-reported levels, replacement start levels, imported
+history and compacted samples remain **raw**. The forecast transforms that small
+history on read, so enabling, changing or disabling a profile neither mixes scales
+nor invents replacements. Supply raw values to history/replacement actions.
+Replacement/increase detection continues to compare raw percentages, even when
+both displayed values would be clamped at 100%. Battery+ exposes
+`raw_battery_level`, `battery_percentage_profile`, `nimh_full_level` and
+`nimh_settled_level` for inspection. Existing history is not rewritten.
 
 ## Evidence and smoothing
 
@@ -11,6 +43,12 @@ of observed history are required. Daily medians and the median of pairwise slope
 (Theil-Sen) smooth quantisation and isolated anomalous days. A trend must explain
 at least **three percentage points** of decline. A short trend is marked
 `trend_quality: provisional`; from seven days it is `established`.
+
+For the **NiMH profile**, exclude **seven days** rather than 72 hours and fit only
+samples at or below the configured settled source level (77 by default). The
+compressed top segment has a different slope and must not be extrapolated all
+the way down to 10%. A new NiMH cycle therefore needs at least three full days
+of usable observations after that initial week before it can yield an estimate.
 
 Prefer the last **14 days**; if discharge is too slow to resolve, extend to 30
 and then **90 days**. Missing days are not interpolated. Gaps longer than three

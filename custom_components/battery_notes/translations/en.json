@@ -89,11 +89,13 @@
                         "battery_quantity": "Battery quantity",
                         "note": "Note",
                         "battery_low_threshold": "Battery low threshold",
-                        "battery_increase_threshold": "Battery increase threshold"
+                        "battery_increase_threshold": "Battery increase threshold",
+                        "battery_percentage_profile": "Percentage correction"
                     },
                     "data_description": {
                         "battery_low_threshold": "0 will use the global default threshold.",
-                        "battery_increase_threshold": "The threshold is the difference in increase between previous and current battery level.\n0 will use the global default threshold."
+                        "battery_increase_threshold": "The threshold is the difference in increase between previous and current battery level.\n0 will use the global default threshold.",
+                        "battery_percentage_profile": "NiMH/LSD-NiMH for AA/AAA rechargeable cells. Default: 83% source → 100%, 77% → 97%, then linear to zero. Calibrate per device model; this is not a capacity measurement."
                     },
                     "sections": {
                         "advanced_settings": {
@@ -102,13 +104,17 @@
                                 "battery_percentage_template": "Battery percentage template",
                                 "battery_low_template": "Battery low template",
                                 "retain_state": "Retain state",
-                                "filter_outliers": "Filter outliers"
+                                "filter_outliers": "Filter outliers",
+                                "nimh_full_level": "NiMH: source level when fully charged",
+                                "nimh_settled_level": "NiMH: source level after initial settling"
                             },
                             "data_description": {
                                 "battery_percentage_template": "Template to create a battery percentage.\nOnly needed for devices that do not have a standard battery percentage.",
                                 "battery_low_template": "Template to determine a battery is low, should return true if low.\nOnly needed for non-standard battery levels.",
                                 "retain_state": "Retain the last battery state when the source entity is unavailable.\nUseful for devices that sleep and become unavailable.",
-                                "filter_outliers": "Filter out large battery level drops, reducing falsely firing events on devices that erroneously report levels occasionally."
+                                "filter_outliers": "Filter out large battery level drops, reducing falsely firing events on devices that erroneously report levels occasionally.",
+                                "nimh_full_level": "Optional, default 83. This raw source level is displayed as 100%.",
+                                "nimh_settled_level": "Optional, default 77. This raw level is displayed as 97%. Must be below the full level; linear down to zero below this point."
                             }
                         }
                     }
@@ -125,12 +131,14 @@
                         "battery_quantity": "Battery quantity",
                         "note": "Note",
                         "battery_low_threshold": "Battery low threshold",
-                        "battery_increase_threshold": "Battery increase threshold"
+                        "battery_increase_threshold": "Battery increase threshold",
+                        "battery_percentage_profile": "Percentage correction"
                     },
                     "data_description": {
                         "name": "Leaving blank will take the name from the source device.",
                         "battery_low_threshold": "0 will use the global default threshold.",
-                        "battery_increase_threshold": "The threshold is the difference in increase between previous and current battery level.\n0 will use the global default threshold."
+                        "battery_increase_threshold": "The threshold is the difference in increase between previous and current battery level.\n0 will use the global default threshold.",
+                        "battery_percentage_profile": "NiMH/LSD-NiMH for AA/AAA rechargeable cells. Default: 83% source → 100%, 77% → 97%, then linear to zero. Calibrate per device model; this is not a capacity measurement."
                     },
                     "sections": {
                         "advanced_settings": {
@@ -139,13 +147,17 @@
                                 "battery_percentage_template": "Battery percentage template",
                                 "battery_low_template": "Battery low template",
                                 "retain_state": "Retain state",
-                                "filter_outliers": "Filter outliers"
+                                "filter_outliers": "Filter outliers",
+                                "nimh_full_level": "NiMH: source level when fully charged",
+                                "nimh_settled_level": "NiMH: source level after initial settling"
                             },
                             "data_description": {
                                 "battery_percentage_template": "Template to create a battery percentage.\nOnly needed for devices that do not have a standard battery percentage.",
                                 "battery_low_template": "Template to determine a battery is low, should return true if low.\nOnly needed for non-standard battery levels.",
                                 "retain_state": "Retain the last battery state when the source entity is unavailable.\nUseful for devices that sleep and become unavailable.",
-                                "filter_outliers": "Filter out large battery level drops, reducing falsely firing events on devices that erroneously report levels occasionally."
+                                "filter_outliers": "Filter out large battery level drops, reducing falsely firing events on devices that erroneously report levels occasionally.",
+                                "nimh_full_level": "Optional, default 83. This raw source level is displayed as 100%.",
+                                "nimh_settled_level": "Optional, default 77. This raw level is displayed as 97%. Must be below the full level; linear down to zero below this point."
                             }
                         }
                     }
@@ -158,7 +170,8 @@
             "error": {
                 "unknown": "Unknown error occurred.",
                 "unconfigurable_entity": "It is not possible to add this entity to Battery Notes.",
-                "orphaned_battery_note": "The associated device or entity no longer exists for this Battery Note."
+                "orphaned_battery_note": "The associated device or entity no longer exists for this Battery Note.",
+                "invalid_nimh_levels": "NiMH calibration requires 0 < settled source level < full source level ≤ 100."
             }
         }
     },
@@ -423,6 +436,14 @@
     "exceptions": {
         "not_configured_in_battery_notes": {
             "message": "{source} is not configured in Battery Notes."
+        }
+    },
+    "selector": {
+        "battery_percentage_profile": {
+            "options": {
+                "none": "Unchanged",
+                "nimh": "NiMH / LSD-NiMH (AA/AAA rechargeable)"
+            }
         }
     }
 }

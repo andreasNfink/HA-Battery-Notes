@@ -34,6 +34,7 @@ from .const import (
     CONF_BATTERY_INCREASE_THRESHOLD,
     CONF_BATTERY_LOW_TEMPLATE,
     CONF_BATTERY_LOW_THRESHOLD,
+    CONF_BATTERY_PERCENTAGE_PROFILE,
     CONF_BATTERY_PERCENTAGE_TEMPLATE,
     CONF_BATTERY_QUANTITY,
     CONF_BATTERY_TYPE,
@@ -50,6 +51,8 @@ from .const import (
     CONF_MANUFACTURER,
     CONF_MODEL,
     CONF_MODEL_ID,
+    CONF_NIMH_FULL_LEVEL,
+    CONF_NIMH_SETTLED_LEVEL,
     CONF_NOTE,
     CONF_RETAIN_STATE,
     CONF_ROUND_BATTERY,
@@ -65,6 +68,7 @@ from .const import (
 from .coordinator import MY_KEY
 from .library import DATA_LIBRARY, DeviceBatteryDetails, ModelInfo
 from .library_updater import LibraryUpdater
+from .percentage import DEFAULT_NIMH_FULL, DEFAULT_NIMH_SETTLED, PercentageProfile
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -332,6 +336,17 @@ def _battery_schema(
             ),
             key(vol.Optional, CONF_NOTE, default=data.get(CONF_NOTE, "")): text,
             key(
+                vol.Optional,
+                CONF_BATTERY_PERCENTAGE_PROFILE,
+                default=data.get(CONF_BATTERY_PERCENTAGE_PROFILE, "none"),
+            ): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=["none", "nimh"],
+                    translation_key="battery_percentage_profile",
+                    mode=selector.SelectSelectorMode.DROPDOWN,
+                )
+            ),
+            key(
                 vol.Required,
                 CONF_BATTERY_LOW_THRESHOLD,
                 default=int(data.get(CONF_BATTERY_LOW_THRESHOLD, 0)),
@@ -360,6 +375,16 @@ def _battery_schema(
                         key(
                             vol.Optional, CONF_FILTER_OUTLIERS, default=False
                         ): selector.BooleanSelector(),
+                        vol.Optional(CONF_NIMH_FULL_LEVEL): selector.NumberSelector(
+                            selector.NumberSelectorConfig(
+                                min=1, max=100, step=0.1, mode=number_box
+                            )
+                        ),
+                        vol.Optional(CONF_NIMH_SETTLED_LEVEL): selector.NumberSelector(
+                            selector.NumberSelectorConfig(
+                                min=0.1, max=99.9, step=0.1, mode=number_box
+                            )
+                        ),
                     }
                 ),
                 {"collapsed": True},
@@ -388,6 +413,32 @@ def _apply_battery_input(data: dict[str, Any], user_input: dict[str, Any]) -> No
     )
     advanced[CONF_RETAIN_STATE] = advanced_input.get(CONF_RETAIN_STATE, False)
     advanced[CONF_FILTER_OUTLIERS] = advanced_input.get(CONF_FILTER_OUTLIERS, False)
+    if user_input.get(CONF_BATTERY_PERCENTAGE_PROFILE, "none") == "nimh":
+        data[CONF_BATTERY_PERCENTAGE_PROFILE] = "nimh"
+        advanced[CONF_NIMH_FULL_LEVEL] = float(
+            advanced_input.get(CONF_NIMH_FULL_LEVEL, DEFAULT_NIMH_FULL)
+        )
+        advanced[CONF_NIMH_SETTLED_LEVEL] = float(
+            advanced_input.get(CONF_NIMH_SETTLED_LEVEL, DEFAULT_NIMH_SETTLED)
+        )
+    else:
+        data.pop(CONF_BATTERY_PERCENTAGE_PROFILE, None)
+        advanced.pop(CONF_NIMH_FULL_LEVEL, None)
+        advanced.pop(CONF_NIMH_SETTLED_LEVEL, None)
+
+
+def _percentage_errors(user_input: dict[str, Any]) -> dict[str, str]:
+    """Validate calibration before creating or changing a saved note."""
+    advanced = user_input[CONF_ADVANCED_SETTINGS]
+    try:
+        PercentageProfile(
+            user_input.get(CONF_BATTERY_PERCENTAGE_PROFILE, "none"),
+            float(advanced.get(CONF_NIMH_FULL_LEVEL, DEFAULT_NIMH_FULL)),
+            float(advanced.get(CONF_NIMH_SETTLED_LEVEL, DEFAULT_NIMH_SETTLED)),
+        )
+    except (TypeError, ValueError):
+        return {"base": "invalid_nimh_levels"}
+    return {}
 
 
 class BatteryNotesFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
@@ -718,6 +769,9 @@ class BatteryNotesSubentryFlowHandler(ConfigSubentryFlow):
         unique_id, title = calc_config_attributes(self.hass, self.data)
 
         if user_input is not None:
+            errors = _percentage_errors(user_input)
+
+        if user_input is not None and not errors:
             _apply_battery_input(self.data, user_input)
 
             # Check if unique_id already exists
@@ -752,6 +806,9 @@ class BatteryNotesSubentryFlowHandler(ConfigSubentryFlow):
         errors: dict[str, str] = {}
 
         if user_input is not None:
+            errors = _percentage_errors(user_input)
+
+        if user_input is not None and not errors:
             _apply_battery_input(self.data, user_input)
 
             # Save the updated subentry, the name is held in the title not the data
