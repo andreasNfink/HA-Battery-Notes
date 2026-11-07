@@ -44,11 +44,48 @@ of observed history are required. Daily medians and the median of pairwise slope
 at least **three percentage points** of decline. A short trend is marked
 `trend_quality: provisional`; from seven days it is `established`.
 
-For the **NiMH profile**, exclude **seven days** rather than 72 hours and fit only
-samples at or below the configured settled source level (77 by default). The
-compressed top segment has a different slope and must not be extrapolated all
-the way down to 10%. A new NiMH cycle therefore needs at least three full days
-of usable observations after that initial week before it can yield an estimate.
+For the **NiMH profile**, the configured settled source level (77 by default)
+replaces the fixed waiting period. Fit only samples at or below that knee. At
+least **24 hours** between daily representatives and **one corrected percentage
+point** of fitted decline are required, using the partially observed current day
+as well. Short trends remain provisional. The compressed upper segment has a
+different slope and must not be extrapolated all the way down to 10%.
+
+## Fallback estimates and unchanged observations
+
+Use the own fitted trend first. If it is unresolved or contains gaps, use a
+clearly labelled **average of this battery's observed decline**: the first
+observed day's median to the current value, over at least three days and one
+corrected point of decline, after the applicable settling exclusion. This can
+span observation gaps; it does not invent intermediate measurements or claim a
+robust fitted trend. Its status is `average_estimate`, quality `average` and
+`estimate_source: own_average`.
+
+If that is unavailable too, use a clearly labelled **reference estimate** from
+at least three independent other devices. Match manufacturer, model/model ID,
+cell type and quantity, and the entire percentage profile. Duplicate notes for
+one physical device have one vote; the target device never predicts itself.
+Each reference needs at least seven days and three corrected points of observed
+main-discharge decline. The median of their individual average rates resists
+extreme devices. This is observed partial-cycle experience, not a measured
+complete battery lifetime. Status is `reference_estimate`, quality `reference`,
+`estimate_source: similar_devices`; `reference_devices` gives the sample size.
+The current corrected level minus 10%, divided by that rate, gives the days.
+New source reports and reference updates replace the fallback automatically.
+
+An unavailable source, stale stored report or suspected replacement still blocks
+all methods. A source awaiting its first MQTT state can reuse the actual stored
+report for up to three days, preserving its age.
+
+Enabled forecast sensors also observe the currently available HA percentage at
+their existing six-hour timer. Thus a constant 65% remains an observed plateau
+even if the source integration suppresses unchanged writes. These are **HA state
+observations**, not newly requested physical measurements. They never refresh
+`battery_last_reported`, change replacement dates or fire battery events.
+Unknown/unavailable states add no samples. Samples remain bounded and raw;
+fitting applies settling/knee rules on read, so changing profiles does not discard
+the early raw observations. History imports can fill earlier gaps explicitly
+from existing source history; runtime estimation never queries recorder.
 
 Prefer the last **14 days**; if discharge is too slow to resolve, extend to 30
 and then **90 days**. Missing days are not interpolated. Gaps longer than three
@@ -56,7 +93,7 @@ days invalidate the corresponding window. The estimate is
 `ceil((current percentage - 10) / daily percentage-point loss)`.
 A plateau, including a sensor still reporting 100%, cannot supply a meaningful
 day count and stays `trend_unclear`. At or below 10% the estimate is zero.
-Missing/unavailable sources and measurements older than three days remain unknown.
+Missing/unavailable sources and stored reports older than three days remain unknown.
 An MQTT source awaiting its first report may reuse a real persisted reading with
 its original timestamp (`reading_source: stored_report`).
 
@@ -94,7 +131,7 @@ remain estimates.
 ## Performance and persistence
 
 There are no runtime recorder scans, network calls or extra device polling.
-Keep the first report per six-hour UTC slot for the most recent 15 days and one
+Keep the first available-state observation per six-hour UTC slot for the most recent 15 days and one
 observed value per older day, at most **140 records per note** and about 91 days.
 Daily medians weight each day equally. A fit considers at most 90 daily points
 and about 4,000 slopes, with a short window tried first. Reports and samples use

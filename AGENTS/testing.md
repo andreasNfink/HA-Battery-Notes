@@ -39,6 +39,7 @@ machinery, and Syrupy snapshots. Asyncio mode is automatic.
 | Thresholds, templates, availability, throttling | `test_battery_events.py`, `test_init_subentries.py` |
 | Replacement actions/buttons and responses | `test_services.py`, `test_button.py` |
 | History and config migrations | `test_store.py`, `test_migration.py` |
+| Early estimates, passive observations, own/reference fallbacks | `test_forecast.py`, `test_percentage.py`, `test_forecast_fallback.py` |
 | Repair issues/reassociation | `test_repairs.py`, `test_init_subentries.py` |
 | Library matching/data/downloads | `test_library.py`, `test_library_data.py`, `test_library_updater.py` |
 | Diagnostics and UI strings | `test_diagnostics.py`, `test_translations.py` |

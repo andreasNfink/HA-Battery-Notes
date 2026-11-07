@@ -28,6 +28,9 @@ class BatteryForecast:
     daily_loss: float | None = None
     trend_days: float = 0
     sample_days: int = 0
+    method: str = "daily_median_theil_sen"
+    reference_count: int = 0
+    fallback_reason: str | None = None
 
 
 def valid_level(value: object) -> bool:
@@ -57,6 +60,8 @@ def add_sample(
     timestamp: datetime,
     level: float,
     started: datetime,
+    *,
+    settling_hours: int = SETTLING_HOURS,
 ) -> list[dict[str, Any]]:
     """Keep six-hour observations for 15 days and one per older day, bounded."""
     if not valid_level(level):
@@ -64,7 +69,7 @@ def add_sample(
     timestamp = timestamp.astimezone(UTC)
     day = timestamp.replace(hour=0, minute=0, second=0, microsecond=0)
     cutoff = max(
-        started + timedelta(hours=SETTLING_HOURS),
+        started + timedelta(hours=settling_hours),
         day - timedelta(days=HISTORY_DAYS + 1),
     )
     points = [(t, v) for t, v in sample_points(samples) if t >= cutoff]
@@ -98,6 +103,7 @@ def estimate_days(  # noqa: PLR0911, PLR0913
     suspended: bool = False,
     samples: list[dict[str, Any]] | None = None,
     settling_hours: int = SETTLING_HOURS,
+    early: bool = False,
 ) -> BatteryForecast:
     """Use daily medians and a robust slope after the initial voltage settling."""
     if not valid_level(current_level) or reported is None:
@@ -117,32 +123,39 @@ def estimate_days(  # noqa: PLR0911, PLR0913
     # Prefer recent behavior; only widen the window for slow, unresolved discharge.
     result = BatteryForecast(None, "insufficient_data")
     for window in (TREND_WINDOW_DAYS, 30, HISTORY_DAYS):
-        result = _trend(samples or [], settled, current_level, reported, window)
+        result = _trend(
+            samples or [], settled, current_level, reported, window, early=early
+        )
         if result.days is not None:
             return result
     return result
 
 
-def _trend(
+def _trend(  # noqa: PLR0913
     samples: list[dict[str, Any]],
     settled: datetime,
     current_level: float,
     reported: datetime,
     window: int,
+    *,
+    early: bool = False,
 ) -> BatteryForecast:
-    """Fit completed observed days; no interpolation or replacement-to-now average."""
+    """Fit daily observations, allowing today's provisional median for early fits."""
     cutoff = max(settled, reported - timedelta(days=window))
     groups: dict[date, list[tuple[datetime, float]]] = defaultdict(list)
     for t, value in sample_points(samples):
-        # No interpolation across outages and no partially observed current day.
-        if cutoff <= t <= reported and t.date() < reported.astimezone(UTC).date():
+        # Standard profiles use completed days; early fits also use today's median.
+        if cutoff <= t <= reported and (
+            early or t.date() < reported.astimezone(UTC).date()
+        ):
             groups[t.date()].append((t, value))
     daily = [
         (median(t.timestamp() for t, _ in values) / 86400, median(v for _, v in values))
         for _, values in sorted(groups.items())
     ]
     span = daily[-1][0] - daily[0][0] if len(daily) > 1 else 0
-    if len(daily) < MIN_TREND_DAYS or span < MIN_TREND_DAYS:
+    minimum_days = 1 if early else MIN_TREND_DAYS
+    if len(daily) < (2 if early else MIN_TREND_DAYS) or span < minimum_days:
         return BatteryForecast(
             None, "insufficient_data", trend_days=round(span, 1), sample_days=len(daily)
         )
@@ -160,10 +173,10 @@ def _trend(
         (a[1] - b[1]) / (b[0] - a[0])
         for i, a in enumerate(daily)
         for b in daily[i + 1 :]
-        if b[0] - a[0] >= 2
+        if b[0] - a[0] >= (1 if early else 2)
     ]
     rate = median(slopes)
-    if rate <= 0 or rate * span < MIN_DROP:
+    if rate <= 0 or rate * span < (1 if early else MIN_DROP):
         return BatteryForecast(
             None, "trend_unclear", trend_days=round(span, 1), sample_days=len(daily)
         )
@@ -173,4 +186,62 @@ def _trend(
         daily_loss=round(rate, 3),
         trend_days=round(span, 1),
         sample_days=len(daily),
+    )
+
+
+def average_forecast(  # noqa: PLR0913
+    samples: list[dict[str, Any]],
+    current_level: float,
+    observed: datetime,
+    started: datetime | None,
+    *,
+    settling_hours: int = SETTLING_HOURS,
+    minimum_days: int = 3,
+    minimum_drop: float = 1,
+) -> BatteryForecast:
+    """Return a labelled endpoint average, allowing gaps without claiming a fitted trend."""
+    if started is None or not valid_level(current_level):
+        return BatteryForecast(None, "missing_baseline")
+    cutoff = max(
+        started + timedelta(hours=settling_hours),
+        observed - timedelta(days=HISTORY_DAYS),
+    )
+    groups: dict[date, list[tuple[datetime, float]]] = defaultdict(list)
+    for timestamp, level in sample_points(samples):
+        if cutoff <= timestamp <= observed:
+            groups[timestamp.date()].append((timestamp, level))
+    if not groups:
+        return BatteryForecast(None, "insufficient_data")
+    first = groups[min(groups)]
+    span = (observed.timestamp() - median(t.timestamp() for t, _ in first)) / 86400
+    drop = median(v for _, v in first) - current_level
+    if span < minimum_days or drop < minimum_drop:
+        return BatteryForecast(None, "trend_unclear")
+    rate = drop / span
+    return BatteryForecast(
+        max(0, ceil((current_level - TARGET_LEVEL) / rate)),
+        "average_estimate",
+        daily_loss=rate,
+        trend_days=round(span, 1),
+        sample_days=len(groups),
+        method="observed_average",
+        reference_count=1,
+    )
+
+
+def reference_forecast(
+    current_level: float | None, rates: list[float]
+) -> BatteryForecast:
+    """Use equal weight per independent comparable device, requiring three."""
+    valid = [rate for rate in rates if isfinite(rate) and rate > 0]
+    if not valid_level(current_level) or len(valid) < 3:
+        return BatteryForecast(None, "insufficient_data")
+    assert current_level is not None
+    rate = median(valid)
+    return BatteryForecast(
+        max(0, ceil((current_level - TARGET_LEVEL) / rate)),
+        "reference_estimate",
+        daily_loss=rate,
+        method="comparable_device_median",
+        reference_count=len(valid),
     )

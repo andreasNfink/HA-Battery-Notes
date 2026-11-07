@@ -66,7 +66,7 @@ from .coordinator import (
     BatteryNotesSubentryCoordinator,
 )
 from .entity import BatteryNotesEntity, BatteryNotesEntityDescription
-from .forecast import BatteryForecast, estimate_days, valid_level
+from .forecast import BatteryForecast, valid_level
 from .template_helpers import TemplateTrackingMixin
 
 
@@ -381,7 +381,15 @@ class BatteryNotesForecastSensor(BatteryNotesEntity, SensorEntity):
                     self.hass, source.entity_id, self._refresh
                 )
             )
+        for peer in self.coordinator.forecast_peers():
+            self.async_on_remove(peer.async_add_listener(self._reference_updated))
         self._refresh()
+
+    @callback
+    def _reference_updated(self) -> None:
+        """Refresh fallback estimates as comparable devices supply new evidence."""
+        if self._forecast.status != "estimated":
+            self._refresh()
 
     @callback
     def _handle_coordinator_update(self) -> None:
@@ -390,36 +398,11 @@ class BatteryNotesForecastSensor(BatteryNotesEntity, SensorEntity):
 
     @callback
     def _refresh(self, _event: Any = None) -> None:
-        """Recalculate in constant time from the note's small stored baseline."""
-        coordinator = self.coordinator
-        baseline = coordinator.forecast_baseline
-        current = coordinator.current_battery_level
-        self._reading_source = "live"
-        if source := coordinator.wrapped_battery:
-            source_state = self.hass.states.get(source.entity_id)
-            if source_state is not None and source_state.state == STATE_UNKNOWN:
-                # MQTT may have no retained state after HA starts. Reuse a real
-                # stored measurement with its original age; never poll the TRV.
-                current = coordinator.last_reported_level
-                self._reading_source = "stored_report"
-            elif source_state is None or not valid_level(source_state.state):
-                current = None
-        profile = coordinator.percentage_profile
-        self._forecast = estimate_days(
-            profile.apply(baseline.get("level")),
-            coordinator.forecast_started,
-            profile.apply(current),
-            coordinator.last_reported,
-            dt_util.utcnow(),
-            suspended=baseline.get("suspended", False),
-            samples=[
-                {**sample, "level": level}
-                for sample in baseline.get("samples", [])
-                if (level := profile.trend_level(sample.get("level"))) is not None
-            ],
-            settling_hours=profile.settling_hours,
+        """Recalculate from bounded raw history and comparable-device evidence."""
+        self._forecast, self._reading_source = self.coordinator.forecast_at(
+            dt_util.utcnow()
         )
-        snapshot = (self._forecast, tuple(self.extra_state_attributes.items()))
+        snapshot = (self._forecast.days, tuple(self.extra_state_attributes.items()))
         if snapshot != self._last_snapshot:
             self._last_snapshot = snapshot
             self.async_write_ha_state()
@@ -442,17 +425,31 @@ class BatteryNotesForecastSensor(BatteryNotesEntity, SensorEntity):
             "battery_last_replaced": self.coordinator.last_replaced,
             "replacement_source": baseline.get("source"),
             "uncertainty_hours": baseline.get("uncertainty_hours", 0),
-            "method": "daily_median_theil_sen",
+            "method": self._forecast.method,
+            "estimate_source": {
+                "observed_average": "own_average",
+                "comparable_device_median": "similar_devices",
+            }.get(self._forecast.method, "own_trend"),
+            "reference_devices": self._forecast.reference_count,
+            "individual_forecast_status": self._forecast.fallback_reason,
             "settling_hours": self.coordinator.percentage_profile.settling_hours,
             "trend_window_days": 90,
             "observation_started": baseline.get("observation_started"),
             "replacement_known": valid_level(baseline.get("level")),
-            "trend_quality": "provisional"
+            "trend_quality": "unavailable"
+            if self._forecast.days is None
+            else "average"
+            if self._forecast.status == "average_estimate"
+            else "reference"
+            if self._forecast.status == "reference_estimate"
+            else "provisional"
             if self._forecast.trend_days < 7
             else "established",
             "trend_days": self._forecast.trend_days,
             "sample_days": self._forecast.sample_days,
-            "daily_loss_percent": self._forecast.daily_loss,
+            "daily_loss_percent": round(self._forecast.daily_loss, 3)
+            if self._forecast.daily_loss is not None
+            else None,
             "reading_source": self._reading_source,
         }
 

@@ -82,7 +82,7 @@ def test_reject_invalid_import(level: float) -> None:
         SERVICE_BATTERY_REPLACED_SCHEMA({"device_id": "test", "battery_level": level})
 
 
-async def test_forecast_lifecycle(
+async def test_forecast_lifecycle(  # noqa: PLR0915
     hass: HomeAssistant,
     battery_note_config_entry: MockConfigEntry,
     battery_note_sensor: er.RegistryEntry,
@@ -176,11 +176,20 @@ async def test_forecast_lifecycle(
     hass.states.async_set(battery_note_sensor.entity_id, "unavailable")
     await hass.async_block_till_done()
     assert hass.states.get(entity.entity_id).state == "unknown"
-    # Six-hour freshness timer expires a silent source without polling its device.
+    # Observe available unchanged states, without inventing a new device report.
     hass.states.async_set(battery_note_sensor.entity_id, "40")
     await hass.async_block_till_done()
+    reported = coordinator.last_reported
     freezer.tick(timedelta(days=4))
     async_fire_time_changed(hass, dt_util.utcnow())
+    await hass.async_block_till_done()
+    assert coordinator.last_reported == reported
+    assert (
+        hass.states.get(entity.entity_id).attributes["reading_source"]
+        == "observed_state"
+    )
+    # An unknown source can only use the real stored report with its original age.
+    hass.states.async_set(battery_note_sensor.entity_id, "unknown")
     await hass.async_block_till_done()
     assert (
         hass.states.get(entity.entity_id).attributes["forecast_status"]
@@ -335,8 +344,8 @@ async def test_import_ignores_other_cycles_and_future_without_polling(
     baseline = coordinator.forecast_baseline
     assert baseline["suspended"] is False
     assert baseline["samples"][0] == {
-        "time": (started + timedelta(hours=72)).isoformat(),
-        "level": 80,
+        "time": (started + timedelta(hours=71)).isoformat(),
+        "level": 90,
     }
     assert (
         len(baseline["samples"]) == 2
@@ -432,5 +441,7 @@ async def test_observed_history_preserves_date_reload_and_opt_in_replacement(
     assert coordinator.forecast_baseline["level"] == 76
     assert coordinator.forecast_baseline["source"] == "history_estimate"
     assert coordinator.forecast_baseline["detect_replacements"]
-    assert not coordinator.forecast_baseline["samples"]
+    assert coordinator.forecast_baseline["samples"] == [
+        {"time": dt_util.utcnow().isoformat(), "level": 76.0}
+    ]
     assert len(events) == 1

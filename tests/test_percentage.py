@@ -33,7 +33,7 @@ def test_nimh_mapping(raw: float, expected: float) -> None:
 def test_only_main_discharge_informs_nimh_trend() -> None:
     """The compressed top slope cannot predict the different lower segment."""
     profile = PercentageProfile("nimh")
-    assert profile.settling_hours == 168
+    assert profile.settling_hours == 0
     assert profile.trend_level(80) is None
     assert profile.trend_level(77) == 97
     assert PercentageProfile().settling_hours == 72
@@ -90,7 +90,7 @@ async def test_profile_reload_and_forecast(  # noqa: PLR0915
     await hass.async_block_till_done()
     assert (
         hass.states.get(forecast_entity.entity_id).attributes["forecast_status"]
-        == "settling"
+        == "insufficient_data"
     )
     coordinator.record_replacement(
         now - timedelta(days=20),

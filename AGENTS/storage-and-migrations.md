@@ -47,10 +47,14 @@ into automatic estimated replacements via `detect_replacements`.
 
 Forecast `samples` are optional ISO timestamp/level pairs in `battery_forecast`.
 Keep at most 140 compacted observations (six-hour slots for 15 recent days,
-one per older day, about 91 days total), exclude the first 72 hours,
+one per older day, about 91 days total), preserve early raw observations,
 and batch sample writes with `REPORTED_SAVE_DELAY`. A replacement clears the
 previous cycle; older baselines without samples remain readable but have no
 trend until enough observations arrive or are explicitly imported.
+
+Apply settling exclusions only when fitting, never by discarding raw samples
+when a profile changes. Passive observations of an available HA source do not
+update last-reported timestamps/levels or create battery/replacement events.
 
 Observation-only imports preserve the last-replaced timestamp and store an
 `observation_started` anchor without a fabricated initial percentage.

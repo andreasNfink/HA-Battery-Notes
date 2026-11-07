@@ -76,10 +76,17 @@ For source and registry behavior, read [Entity identity and lifecycle](entities.
 ## Fork forecast
 
 `forecast.py` contains bounded six-hour sampling, daily medians and a robust
-adaptive 14/30/90-day Theil-Sen trend after 72 hours of settling. `sensor.py` exposes an
+adaptive 14/30/90-day Theil-Sen trend. Standard profiles exclude 72 hours; NiMH
+fits below its knee after at least 24 hours/one corrected point of decline.
+The coordinator prefers that trend, then a labelled own endpoint average, then
+the median rate of at least three independent matching physical devices.
+`sensor.py` exposes an
 optional, disabled-by-default `battery_days_to_10` sensor. The coordinator stores
 a baseline and at most 140 compacted samples through `record_replacement` and existing
-reports; no runtime recorder queries. Historical sample imports are optional
+reports and passive available-state observations; no runtime recorder queries.
+Observations never manufacture a device report or replacement event. Fallback
+sensors subscribe to matching peer coordinators and clean up those listeners.
+Historical sample imports are optional
 on `set_battery_replaced`; `import_battery_history` merges evidence without
 changing replacement metadata. Observation-only anchors and explicit per-note
 automatic replacement detection are described in `docs/forecast.md`. Never reuse the initial settling drop as a fallback.

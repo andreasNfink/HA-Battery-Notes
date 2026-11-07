@@ -19,8 +19,8 @@ class PercentageProfile:
 
     @property
     def settling_hours(self) -> int:
-        """Exclude a full initial week for NiMH; preserve the existing default."""
-        return 168 if self.name == "nimh" else 72
+        """The NiMH knee replaces a fixed waiting period; keep other profiles."""
+        return 0 if self.name == "nimh" else 72
 
     def trend_level(self, value: object) -> float | None:
         """Never extrapolate the compressed top segment down the linear tail."""

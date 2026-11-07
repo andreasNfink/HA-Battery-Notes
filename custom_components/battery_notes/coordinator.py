@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
@@ -34,7 +34,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
 from homeassistant.util.hass_dict import HassKey
 
-from .common import missing_device_issue_id, validate_is_float
+from .common import get_device_model_id, missing_device_issue_id, validate_is_float
 from .const import (
     ATTR_AREA_NAME,
     ATTR_BATTERY_INCREASE_THRESHOLD,
@@ -77,7 +77,15 @@ from .const import (
     LAST_REPORTED_LEVEL,
 )
 from .filters import LowOutlierFilter
-from .forecast import add_sample, sample_points, valid_level
+from .forecast import (
+    BatteryForecast,
+    add_sample,
+    average_forecast,
+    estimate_days,
+    reference_forecast,
+    sample_points,
+    valid_level,
+)
 from .percentage import DEFAULT_NIMH_FULL, DEFAULT_NIMH_SETTLED, PercentageProfile
 from .store import REPORTED_SAVE_DELAY, SAVE_DELAY, BatteryNotesStorage
 
@@ -674,19 +682,7 @@ class BatteryNotesSubentryCoordinator(DataUpdateCoordinator[None]):
                 else:
                     self._save_forecast_baseline({**baseline, "suspended": True})
             now = dt_util.utcnow()
-            baseline = self.forecast_baseline
-            if (
-                valid_level(value)
-                and not baseline.get("suspended")
-                and (started := self.forecast_started)
-            ):
-                samples = add_sample(
-                    baseline.get("samples", []), now, float(value), started
-                )
-                if samples != baseline.get("samples", []):
-                    self._save_forecast_baseline(
-                        {**baseline, "samples": samples}, save_delay=REPORTED_SAVE_DELAY
-                    )
+            self.record_forecast_observation(value, now)
             self.last_reported = now
             self.last_reported_level = float(value)
             self._previous_battery_low = self.battery_low
@@ -804,6 +800,165 @@ class BatteryNotesSubentryCoordinator(DataUpdateCoordinator[None]):
             return _ensure_utc(datetime.fromisoformat(str(anchor)))
         return None
 
+    def record_forecast_observation(
+        self, level: Any, observed: datetime, *, start_observation: bool = False
+    ) -> None:
+        """Sample the available HA state without inventing a device report/event."""
+        baseline = self.forecast_baseline
+        if not valid_level(level) or baseline.get("suspended"):
+            return
+        started = self.forecast_started
+        if started is None:
+            if not start_observation:
+                return
+            started = observed
+            baseline = {**baseline, "observation_started": observed.isoformat()}
+        samples = add_sample(
+            baseline.get("samples", []),
+            observed,
+            float(level),
+            started,
+            settling_hours=0,
+        )
+        if samples != baseline.get("samples", []) or baseline != self.forecast_baseline:
+            self._save_forecast_baseline(
+                {**baseline, "samples": samples}, save_delay=REPORTED_SAVE_DELAY
+            )
+
+    def forecast_reading(self, now: datetime) -> tuple[Any, datetime | None, str]:
+        """Distinguish an available observed state from an aged persisted report."""
+        if source := self.wrapped_battery:
+            state = self.hass.states.get(source.entity_id)
+            if state is not None and valid_level(state.state):
+                if self._outlier_filter and self._outlier_filter.skip_processing:
+                    return (
+                        self.current_battery_level,
+                        self.last_reported,
+                        "stored_report",
+                    )
+                return state.state, now, "observed_state"
+            if state is not None and state.state == STATE_UNKNOWN:
+                return self.last_reported_level, self.last_reported, "stored_report"
+            return None, self.last_reported, "unavailable"
+        return self.current_battery_level, self.last_reported, "live"
+
+    @property
+    def forecast_group(self) -> tuple[str, str, str, int, str, float, float] | None:
+        """Match hardware, cells and calibration; chemistry alone is insufficient."""
+        device = (
+            dr.async_get(self.hass).async_get(self.device_id)
+            if self.device_id
+            else None
+        )
+        if (
+            device is None
+            or not device.manufacturer
+            or not (device.model or get_device_model_id(device))
+        ):
+            return None
+        profile = self.percentage_profile
+        return (
+            device.manufacturer.casefold(),
+            (get_device_model_id(device) or device.model or "").casefold(),
+            self.battery_type.casefold(),
+            self.battery_quantity,
+            profile.name,
+            profile.full,
+            profile.settled,
+        )
+
+    def forecast_peers(self) -> list[BatteryNotesSubentryCoordinator]:
+        """Each physical device contributes once and never predicts itself."""
+        group = self.forecast_group
+        if group is None:
+            return []
+        seen = {self.device_id}
+        result = []
+        for peer in (
+            self.config_entry.runtime_data.subentry_coordinators or {}
+        ).values():
+            if (
+                peer.is_orphaned
+                or peer.device_id in seen
+                or peer.forecast_group != group
+            ):
+                continue
+            seen.add(peer.device_id)
+            result.append(peer)
+        return result
+
+    def _forecast_samples(self) -> list[dict[str, Any]]:
+        """Normalize only the linear tail; leave all persisted evidence raw."""
+        return [
+            {**sample, "level": level}
+            for sample in self.forecast_baseline.get("samples", [])
+            if (level := self.percentage_profile.trend_level(sample.get("level")))
+            is not None
+        ]
+
+    def average_forecast_at(
+        self, current: Any, observed: datetime, *, reference: bool = False
+    ) -> BatteryForecast:
+        """Summarize observed main-discharge loss, labelled separately from a trend."""
+        level = self.percentage_profile.trend_level(current)
+        if level is None or self.forecast_baseline.get("suspended"):
+            return BatteryForecast(None, "trend_unclear")
+        return average_forecast(
+            self._forecast_samples(),
+            level,
+            observed,
+            self.forecast_started,
+            settling_hours=self.percentage_profile.settling_hours,
+            minimum_days=7 if reference else 3,
+            minimum_drop=3 if reference else 1,
+        )
+
+    def forecast_at(self, now: datetime) -> tuple[BatteryForecast, str]:
+        """Prefer own trend, then own mean, then independent matching devices."""
+        current, observed, reading_source = self.forecast_reading(now)
+        if reading_source == "observed_state":
+            self.record_forecast_observation(current, now, start_observation=True)
+        profile = self.percentage_profile
+        baseline = self.forecast_baseline
+        result = estimate_days(
+            profile.apply(baseline.get("level")),
+            self.forecast_started,
+            profile.apply(current),
+            observed,
+            now,
+            suspended=baseline.get("suspended", False),
+            samples=self._forecast_samples(),
+            settling_hours=profile.settling_hours,
+            early=profile.name == "nimh",
+        )
+        if result.status == "estimated" and profile.trend_level(current) is None:
+            result = BatteryForecast(None, "trend_unclear")
+        if result.days is not None or result.status in {
+            "missing_reading",
+            "stale_reading",
+            "replacement_suspected",
+        }:
+            return result, reading_source
+        assert observed is not None
+        average = self.average_forecast_at(current, observed)
+        if average.days is not None:
+            return replace(average, fallback_reason=result.status), reading_source
+        rates = []
+        for peer in self.forecast_peers():
+            value, timestamp, _source = peer.forecast_reading(now)
+            if (
+                timestamp is None
+                or not 0 <= (now - timestamp).total_seconds() <= 3 * 86400
+            ):
+                continue
+            reference = peer.average_forecast_at(value, timestamp, reference=True)
+            if reference.daily_loss is not None:
+                rates.append(reference.daily_loss)
+        reference = reference_forecast(profile.apply(current), rates)
+        if reference.days is not None:
+            return replace(reference, fallback_reason=result.status), reading_source
+        return result, reading_source
+
     def import_forecast_history(
         self, trend_samples: list[dict[str, Any]], *, detect_replacements: bool = False
     ) -> None:
@@ -833,7 +988,13 @@ class BatteryNotesSubentryCoordinator(DataUpdateCoordinator[None]):
             if previous is not None and value - previous > 10:
                 suspended = True
             previous = value
-            samples = add_sample(samples, timestamp, value, started)
+            samples = add_sample(
+                samples,
+                timestamp,
+                value,
+                started,
+                settling_hours=0,
+            )
         self._save_forecast_baseline(
             {
                 **baseline,
@@ -880,7 +1041,13 @@ class BatteryNotesSubentryCoordinator(DataUpdateCoordinator[None]):
                 ):
                     suspended = True
                 previous = value
-                samples = add_sample(samples, timestamp, value, replaced)
+                samples = add_sample(
+                    samples,
+                    timestamp,
+                    value,
+                    replaced,
+                    settling_hours=0,
+                )
         # Trim imports to the current window and include a real current report.
         if (
             valid_level(current := self.current_battery_level)
@@ -893,7 +1060,13 @@ class BatteryNotesSubentryCoordinator(DataUpdateCoordinator[None]):
                 and float(current) - float(previous) > 10
             ):
                 suspended = True
-            samples = add_sample(samples, reported, float(current), replaced)
+            samples = add_sample(
+                samples,
+                reported,
+                float(current),
+                replaced,
+                settling_hours=0,
+            )
         self.last_replaced = replaced
         self._save_forecast_baseline(
             {
